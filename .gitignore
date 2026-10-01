@@ -1,0 +1,20 @@
+# Competition data must not be redistributed (CC BY-NC 4.0 + competition rules)
+data/
+*.parquet
+*.zip
+
+# Credentials
+kaggle.json
+.env
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
