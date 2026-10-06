@@ -1,0 +1,22 @@
+{
+  "unique_smiles": 277566,
+  "unparseable": 0,
+  "shipped_ik14_distinct": 275810,
+  "metric_key_distinct": 274195,
+  "share_smiles_key_differs_from_shipped": 0.016093469661269753,
+  "metric_keys_covering_>1_shipped_ik14": 1541,
+  "shipped_ik14_in_twin_groups": 3167,
+  "share_key_changes_by_library": {
+    "drug_plus": 0.0752,
+    "enveda-180": 0.005,
+    "enveda-np-examples": 0.064,
+    "gnps": 0.0447,
+    "masaryk": 0.0433,
+    "massbank": 0.0476,
+    "mona": 0.0652,
+    "msdial": 0.0697,
+    "pluskal_ms2": 0.0278,
+    "riken": 0.0769,
+    "spectraverse": 0.0004
+  }
+}

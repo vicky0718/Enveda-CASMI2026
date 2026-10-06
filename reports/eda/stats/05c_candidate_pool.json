@@ -1,0 +1,64 @@
+{
+  "pool_size": 729391,
+  "pool_from_train": 275810,
+  "pool_coconut_only": 453581,
+  "coconut_coverage_by_library": {
+    "drug_plus": 0.7743,
+    "enveda-180": 0.0003,
+    "enveda-np-examples": 0.996,
+    "gnps": 0.3703,
+    "masaryk": 0.8486,
+    "massbank": 0.6319,
+    "mona": 0.8096,
+    "msdial": 0.8029,
+    "pluskal_ms2": 0.1742,
+    "riken": 0.7903,
+    "spectraverse": 0.2172
+  },
+  "np_examples_window_10ppm": {
+    "count": 250.0,
+    "mean": 87.5,
+    "std": 81.3,
+    "min": 2.0,
+    "25%": 25.2,
+    "50%": 57.5,
+    "75%": 125.0,
+    "90%": 213.0,
+    "max": 402.0
+  },
+  "np_examples_same_formula": {
+    "count": 250.0,
+    "mean": 66.9,
+    "std": 71.3,
+    "min": 1.0,
+    "25%": 15.2,
+    "50%": 42.0,
+    "75%": 104.8,
+    "90%": 159.0,
+    "max": 385.0
+  },
+  "share_window_candidates_same_formula": 0.7651282989525683,
+  "random_rank_mrr_within_same_formula": 0.1918385837122831,
+  "pathway_mix": {
+    "np-examples (test-like)": {
+      "Alkaloids": 0.328,
+      "Shikimates and Phenylpropanoids": 0.256,
+      "Terpenoids": 0.188,
+      "Amino acids and Peptides": 0.088,
+      "Polyketides": 0.08,
+      "Fatty acids": 0.036,
+      "Carbohydrates": 0.02,
+      "unclassified": 0.004
+    },
+    "COCONUT in test mass range 157\u20131159": {
+      "Alkaloids": 0.2692,
+      "Shikimates and Phenylpropanoids": 0.1751,
+      "Terpenoids": 0.2385,
+      "Amino acids and Peptides": 0.0343,
+      "Polyketides": 0.086,
+      "Fatty acids": 0.1106,
+      "Carbohydrates": 0.0088,
+      "unclassified": 0.0776
+    }
+  }
+}
