@@ -8,6 +8,51 @@ import pandas as pd
 from .search import Library, Pool, Query, analog_hits, make_query, tanimoto
 
 P_EXP, Q_EXP, TOP_PER_SPEC = 3.0, 1.0, 50
+FULL_BITS = 4096 + 4096 + 2048 + 167
+
+
+def load_fp_models(art, device=None):
+    """Our trained FP nets (fpnet*.pt) + the informative-bit index. Returns None if absent."""
+    import glob
+
+    import torch
+
+    from . import fpmodel as M
+    paths = sorted(glob.glob(f"{art}/fpnet*.pt"))
+    if not paths:
+        return None
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    nets = []
+    for pth in paths:
+        ck = torch.load(pth, map_location="cpu", weights_only=True)
+        net = M.FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]))
+        net.load_state_dict({k: v.float() for k, v in ck["model"].items()})
+        nets.append(net.to(device).eval())
+    return {"nets": nets, "bits": np.load(f"{art}/pool/fp_bits.npy"), "device": device}
+
+
+def fp_logits(q: Query, fpm):
+    """Mean logits over a molecule's spectra, plus the merged-spectrum view (two input views)."""
+    from . import fpmodel as M
+    if fpm is None or not q.raw:
+        return None
+    peaks = [M.prep_peaks(m, i, pm) for (m, i), pm in zip(q.raw, q.prec)]
+    merged = M.prep_peaks(*M.merge_peaks(q.raw), float(np.median(q.prec)))
+    ins = ["timsTOF"] * (len(peaks) + 1)
+    ces = [0.0 if np.isnan(c) else c for c in q.ce]
+    ces = ces + [float(np.mean(ces))]
+    modes = [1.0 if m > 0 else 0.0 for m in q.mode]
+    modes = modes + [modes[0]]
+    adducts = list(q.adduct) + [q.adduct[0]]
+    precs = list(q.prec) + [float(np.median(q.prec))]
+    z = M.logits(fpm["nets"], peaks + [merged], precs, adducts, ins, ces, modes, device=fpm["device"])
+    return 0.5 * z[:-1].mean(0) + 0.5 * z[-1]
+
+
+def fp_scores(pool: Pool, cand, z, bits):
+    """f·z for each candidate (Bayes log-likelihood up to a constant)."""
+    y = np.unpackbits(np.asarray(pool.fp[cand]), axis=1, count=FULL_BITS)[:, bits].astype(np.float32)
+    return y @ z.astype(np.float32)
 
 
 def queries_from_test(test: pd.DataFrame):
@@ -23,7 +68,7 @@ def queries_from_test(test: pd.DataFrame):
 
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
-                   p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC):
+                   p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None):
     """Per-candidate features for one molecule. `hits` must already exclude any references the
     evaluation regime forbids. Returns DataFrame indexed like `cand`."""
     ckeys = pool.key[cand]
@@ -41,9 +86,14 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         tmax = T.max(1)
     else:
         a_mean = a_max = tmax = np.zeros(len(cand))
-    return pd.DataFrame({"pool_row": cand, "key": ckeys, "direct": d, "direct_n": dn, "analog": a_mean,
-                         "analog_max": a_max, "tmax": tmax,
-                         "mass_err_ppm": (pool.mass[cand] - q.neutral_mass) / q.neutral_mass * 1e6})
+    f = pd.DataFrame({"pool_row": cand, "key": ckeys, "direct": d, "direct_n": dn, "analog": a_mean,
+                      "analog_max": a_max, "tmax": tmax,
+                      "mass_err_ppm": (pool.mass[cand] - q.neutral_mass) / q.neutral_mass * 1e6})
+    if z is not None:
+        fz = fp_scores(pool, cand, z, bits)
+        f["fp"] = fz - fz.max()
+        f["fp_rank"] = pd.Series(-fz).rank(method="min").values
+    return f
 
 
 def heuristic_rank(f: pd.DataFrame) -> np.ndarray:
@@ -51,18 +101,50 @@ def heuristic_rank(f: pd.DataFrame) -> np.ndarray:
     return np.argsort(-score, kind="stable")
 
 
-def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, log=print):
+def load_ranker(art):
+    """LightGBM ranker(s) trained by scripts/eval/train_ranker.py, or None (heuristic ranking)."""
+    import glob
+    import json
+    paths = sorted(glob.glob(f"{art}/ranker*.txt"))
+    if not paths:
+        return None
+    import lightgbm as lgb
+    boosters = [lgb.Booster(model_file=p) for p in paths]
+    cols = json.load(open(f"{art}/ranker_features.json"))
+
+    def rank(f):
+        x = f.reindex(columns=cols).astype(np.float32).values
+        return np.argsort(-np.mean([b.predict(x) for b in boosters], 0), kind="stable")
+    return rank
+
+
+def load_keycache(art):
+    """smiles -> metric key for pool rows whose key is known (train structures, keyed COCONUT rows)."""
+    import os
+    p = f"{art}/keycache.parquet"
+    if not os.path.exists(p):
+        return {}
+    k = pd.read_parquet(p)
+    return dict(zip(k.smiles, k.metric_key))
+
+
+def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=None, log=print):
     rows = []
     qs = queries_from_test(test)
     for i, q in enumerate(qs):
-        cand = pool.window(q.neutral_mass) if q.mz else np.zeros(0, np.int64)
-        if len(cand) == 0:
+        try:
+            cand = pool.window(q.neutral_mass) if q.mz else np.zeros(0, np.int64)
+            if len(cand) == 0:
+                rows.append((q.mid, []))
+                continue
+            h = analog_hits(q, lib, top=300)
+            z = fp_logits(q, fp_models)
+            f = channel_scores(q, pool, lib, h, cand, z=z, bits=None if fp_models is None else fp_models["bits"])
+            order = ranker(f) if ranker is not None else heuristic_rank(f)
+            rows.append((q.mid, list(pool.df.smiles.values[cand[order]])))
+        except Exception as e:  # one bad molecule must never sink the file
+            log(f"  {q.mid}: {type(e).__name__}: {e}")
             rows.append((q.mid, []))
-            continue
-        h = analog_hits(q, lib, top=300)
-        f = channel_scores(q, pool, lib, h, cand)
-        order = ranker(f) if ranker is not None else heuristic_rank(f)
-        rows.append((q.mid, list(pool.df.smiles.values[cand[order]])))
         if i % 50 == 0:
             log(f"  {i}/{len(qs)} molecules")
     return rows

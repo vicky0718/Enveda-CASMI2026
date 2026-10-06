@@ -28,6 +28,7 @@ class Query:
     mode: list           # +1 / -1
     prec: list
     ce: list = field(default_factory=list)
+    raw: list = field(default_factory=list)   # (mz, intensity) as acquired (m/z-corrected), for the FP model
 
     @property
     def neutral_mass(self) -> float:
@@ -51,6 +52,7 @@ def make_query(mid, spectra, enveda=True, floor=0.002, top_k=64):
         q.mode.append(1 if pos else -1)
         q.prec.append(s["prec"] + sh)
         q.ce.append(s.get("ce", np.nan))
+        q.raw.append((np.asarray(s["mz"], np.float64) + sh, np.asarray(s["it"], np.float64)))
     return q
 
 
