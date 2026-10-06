@@ -15,7 +15,7 @@ from casmi.paths import ROOT
 ART = ROOT / "data" / "artifacts"
 OUT = ART / "submit_ds"
 MODULES = ["__init__", "simkernels", "spectra", "library", "formula", "fpmodel", "search", "pipeline", "metric",
-           "frag"]
+           "frag", "edits", "fp"]
 SLUG = "casmi26-artifacts"
 
 

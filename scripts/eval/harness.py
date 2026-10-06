@@ -163,38 +163,66 @@ def mrr(ranked_keys, truth):
     return 0.0
 
 
+def _score_job(key):
+    from casmi.frag import frag_scores
+    pool, lib, qs, h = _G["pool"], _G["lib"], _G["qs"], _G["H"].get(key)
+    g = qs[qs.key == key]
+    q = query_of(lib, g.lrow.values, key)
+    cand_all = pool.window(q.neutral_mass)
+    truth = {key, _G["ik_of"].get(key, key)}
+    fr_all = _G["fr_of"][key].reindex(cand_all).fillna(0).values if key in _G["fr_of"] else np.zeros(len(cand_all))
+    res, feats, gens = [], [], {}
+    for regime in ("C1", "C2", "C3"):
+        same = h.key.values == key
+        excl = same & (h.ref_lib.values == _G["src_of"][key]) if regime == "C1" else same
+        hh = h[~excl]
+        keep = ~np.isin(pool.key[cand_all], list(truth)) if regime == "C3" else np.ones(len(cand_all), bool)
+        cand = cand_all[keep]
+        gkey = "C1" if regime == "C1" else "C23"
+        if gkey not in gens:
+            gens[gkey] = P.generate(q, pool, hh, cand_keys=pool.key[cand_all])
+        gen = gens[gkey]
+        if regime == "C3":  # the truth is not in the pool: generated copies of it must stay
+            gen = P.generate(q, pool, hh, cand_keys=pool.key[cand])
+        fr = np.r_[fr_all[keep], frag_scores(list(gen.smiles), q) if len(gen) else []]
+        f = P.channel_scores(q, pool, lib, hh, cand, frag=fr, z=_G["z_of"].get(key), bits=_G["bits"], gen=gen)
+        f["label"] = np.isin(f.key.values, list(truth)).astype(np.int8)
+        f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
+        feats.append(f.drop(columns=["smiles"]))
+        ranked = list(dict.fromkeys(f.key.values[P.heuristic_rank(f)]))
+        res.append({"key": key, "panel": g.panel.iloc[0], "regime": regime, "n_cand": f.key.nunique(),
+                    "n_gen": int(f.is_gen.sum()), "in_list": bool(f.label.any()),
+                    "mrr": max(mrr(ranked, t) for t in truth)})
+    return res, pd.concat(feats, ignore_index=True)
+
+
 def score():
+    from multiprocessing import Pool as MP
+    from casmi.paths import INTERIM
     pool, lib = load()
     qs = pd.read_parquet(EVAL / "queries.parquet")
     H = pd.read_parquet(EVAL / "hits.parquet")
     H["ref_lib"] = lib.L["lib_code"][H.ref.values]
-    src_of = qs.drop_duplicates("key").set_index("key").src_lib
     FR = pd.read_parquet(EVAL / "frag.parquet") if (EVAL / "frag.parquet").exists() else None
-    fr_of = {k: g.set_index("pool_row").frag for k, g in FR.groupby("qkey")} if FR is not None else {}
     Z = np.load(EVAL / "fpz.npz") if (EVAL / "fpz.npz").exists() else None
-    z_of = dict(zip(Z["keys"], Z["z"])) if Z is not None else {}
-    bits = np.load(ART / "pool" / "fp_bits.npy")
+    keys = pd.read_parquet(INTERIM / "metric_keys.parquet").dropna().drop_duplicates("metric_key")
+    _G.update(pool=pool, lib=lib, qs=qs, H={k: g for k, g in H.groupby("qkey", sort=False)},
+              src_of=qs.drop_duplicates("key").set_index("key").src_lib,
+              fr_of={k: g.set_index("pool_row").frag for k, g in FR.groupby("qkey")} if FR is not None else {},
+              z_of=dict(zip(Z["keys"], Z["z"])) if Z is not None else {},
+              bits=np.load(ART / "pool" / "fp_bits.npy"), ik_of=dict(zip(keys.metric_key, keys.inchikey14)))
+    t0 = time.time()
     res, feats = [], []
-    for key, h in H.groupby("qkey", sort=False):
-        g = qs[qs.key == key]
-        q = query_of(lib, g.lrow.values, key)
-        cand = pool.window(q.neutral_mass)
-        for regime in ("C1", "C2"):
-            same = h.key.values == key
-            excl = same if regime == "C2" else same & (h.ref_lib.values == src_of[key])
-            fr = fr_of[key].reindex(cand).fillna(0).values if key in fr_of else None
-            f = P.channel_scores(q, pool, lib, h[~excl], cand, frag=fr, z=z_of.get(key), bits=bits)
-            f["label"] = (f.key.values == key).astype(np.int8)
-            f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
+    with MP(4) as mp:  # fork: workers share the loaded pool / library
+        for i, (r, f) in enumerate(mp.imap_unordered(_score_job, list(_G["H"]), chunksize=4)):
+            res += r
             feats.append(f)
-            ranked = list(dict.fromkeys(f.key.values[P.heuristic_rank(f)]))
-            ranked_a = list(dict.fromkeys(f.key.values[np.argsort(-f.analog.values, kind="stable")]))
-            res.append({"key": key, "panel": g.panel.iloc[0], "regime": regime, "n_cand": f.key.nunique(),
-                        "in_pool": bool(f.label.any()), "mrr": mrr(ranked, key), "mrr_analog": mrr(ranked_a, key)})
+            if i % 300 == 0:
+                print(f"  score {i}/{len(_G['H'])} {time.time() - t0:.0f}s", flush=True)
     r = pd.DataFrame(res)
     r.to_parquet(EVAL / "scores.parquet")
     pd.concat(feats, ignore_index=True).to_parquet(EVAL / "features.parquet")
-    print(r.groupby(["panel", "regime"])[["mrr", "mrr_analog", "in_pool", "n_cand"]].mean().round(4))
+    print(r.groupby(["panel", "regime"])[["mrr", "in_list", "n_cand", "n_gen"]].mean().round(4))
 
 
 if __name__ == "__main__":

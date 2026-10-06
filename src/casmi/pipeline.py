@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .frag import frag_scores
-from .search import Library, Pool, Query, analog_hits, make_query, tanimoto
+from .search import ECFP4_BYTES, Library, Pool, Query, analog_hits, make_query, tanimoto
 
 P_EXP, Q_EXP, TOP_PER_SPEC = 3.0, 1.0, 50
 FULL_BITS = 4096 + 4096 + 2048 + 167
@@ -71,19 +71,59 @@ def queries_from_test(test: pd.DataFrame):
     return out
 
 
+def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=20, ppm=10.0):
+    """Class-3 candidates: one-step biosynthetic edits of the top-k analog reference structures whose
+    mass differs from the unknown by a known transformation. Returns DataFrame(smiles, key, mass, fp,
+    gen_sim, gen_nsrc) without structures already among the pool candidates."""
+    from rdkit import Chem
+    from rdkit.Chem.Descriptors import ExactMolWt
+
+    from .edits import apply_edit, edits_for_delta
+    from .fp import full_fp
+    M = q.neutral_mass
+    h = hits[hits.pool_row.values >= 0].sort_values("sim", ascending=False).drop_duplicates("key").head(k_refs)
+    prods = {}
+    for r, sim in zip(h.pool_row.values, h.sim.values):
+        for n in edits_for_delta(M - pool.mass[r], tol=max(0.005, M * ppm * 1e-6)):
+            for p in apply_edit(pool.df.smiles.values[r], n):
+                g = prods.setdefault(p, [0.0, 0])
+                g[0] = max(g[0], float(sim))
+                g[1] += 1
+    rows, seen = [], set(cand_keys)
+    for smi, (sim, nsrc) in prods.items():
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        key = Chem.MolToInchiKey(mol)[:14]
+        mass = ExactMolWt(mol)
+        if not key or key in seen or abs(mass - M) > max(M * ppm * 1e-6, 0.002):
+            continue
+        f = full_fp(smi)
+        if f is None:
+            continue
+        seen.add(key)
+        rows.append((smi, key, mass, f, sim, nsrc))
+    return pd.DataFrame(rows, columns=["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc"])
+
+
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
                    p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None,
-                   frag=None):
-    """Per-candidate features for one molecule. `hits` must already exclude any references the
-    evaluation regime forbids. Returns DataFrame indexed like `cand`."""
-    ckeys = pool.key[cand]
+                   frag=None, gen=None):
+    """Per-candidate features for one molecule: pool candidates `cand` followed by generated
+    candidates `gen` (from `generate`). `hits` must already exclude any references the evaluation
+    regime forbids. `frag` covers pool + generated rows in that order."""
+    ng = 0 if gen is None else len(gen)
+    ckeys = np.concatenate([pool.key[cand], gen.key.values]) if ng else pool.key[cand]
+    cfp = np.concatenate([np.asarray(pool.fp[cand]), np.stack(gen.fp.values)]) if ng else np.asarray(pool.fp[cand])
+    cmass = np.concatenate([pool.mass[cand], gen.mass.values]) if ng else pool.mass[cand]
+    n = len(ckeys)
     hh = hits[hits.pool_row.values >= 0]
     direct = hh[np.abs(hh.delta.values) < 0.01]
     d = direct.groupby("key").sim.max().reindex(ckeys).fillna(0).values
     dn = direct[direct.sim > 0.3].groupby("key").spec.nunique().reindex(ckeys).fillna(0).values
     top = hh.sort_values("sim", ascending=False).groupby("spec").head(top_per_spec)
-    if len(top):
-        T = tanimoto(pool.ecfp4[cand], pool.ecfp4[top.pool_row.values])
+    if len(top) and n:
+        T = tanimoto(np.ascontiguousarray(cfp[:, :ECFP4_BYTES]), pool.ecfp4[top.pool_row.values])
         contrib = (top.sim.values[None, :] ** p_exp) * (T ** q_exp)
         spec = top.spec.values
         per = np.stack([contrib[:, spec == s].max(1) for s in np.unique(spec)], 1)
@@ -98,13 +138,19 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         sw = top.sim.values ** p_exp
         t_wmean = (T * sw[None, :]).sum(1) / max(sw.sum(), 1e-9)
     else:
-        a_mean = a_max = tmax = a_tims = a_top5 = t_wmean = np.zeros(len(cand))
-    f = pd.DataFrame({"pool_row": cand, "key": ckeys, "direct": d, "direct_n": dn, "analog": a_mean,
+        a_mean = a_max = tmax = a_tims = a_top5 = t_wmean = np.zeros(n)
+    f = pd.DataFrame({"pool_row": np.concatenate([cand, np.full(ng, -1)]), "key": ckeys, "direct": d,
+                      "direct_n": dn, "analog": a_mean,
                       "analog_max": a_max, "tmax": tmax, "analog_tims": a_tims, "analog_top5": a_top5,
-                      "t_wmean": t_wmean,
-                      "mass_err_ppm": (pool.mass[cand] - q.neutral_mass) / q.neutral_mass * 1e6})
-    if z is not None:
-        fz = fp_scores(pool, cand, z, bits)
+                      "t_wmean": t_wmean, "mass_err_ppm": (cmass - q.neutral_mass) / q.neutral_mass * 1e6,
+                      "is_gen": np.r_[np.zeros(len(cand)), np.ones(ng)],
+                      "gen_sim": np.r_[np.zeros(len(cand)), gen.gen_sim.values if ng else []],
+                      "gen_nsrc": np.r_[np.zeros(len(cand)), gen.gen_nsrc.values if ng else []]})
+    f["smiles"] = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng \
+        else pool.df.smiles.values[cand]
+    if z is not None and n:
+        y = np.unpackbits(cfp, axis=1, count=FULL_BITS)[:, bits].astype(np.float32)
+        fz = y @ z.astype(np.float32)
         f["fp"] = fz - fz.max()
         f["fp_rank"] = pd.Series(-fz).rank(method="min").values
     if frag is not None:
@@ -156,7 +202,7 @@ def load_keycache(art):
     return dict(zip(k.smiles, k.metric_key))
 
 
-def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=None, log=print):
+def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=None, use_gen=False, log=print):
     rows = []
     qs = queries_from_test(test)
     for i, q in enumerate(qs):
@@ -167,11 +213,13 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
                 continue
             h = analog_hits(q, lib, top=300)
             z = fp_logits(q, fp_models)
-            fr = frag_scores(list(pool.df.smiles.values[cand]), q)
+            gen = generate(q, pool, h, cand_keys=pool.key[cand]) if use_gen else None
+            smiles = list(pool.df.smiles.values[cand]) + ([] if gen is None else list(gen.smiles))
+            fr = frag_scores(smiles, q)
             f = channel_scores(q, pool, lib, h, cand, z=z, bits=None if fp_models is None else fp_models["bits"],
-                               frag=fr)
+                               frag=fr, gen=gen)
             order = ranker(f) if ranker is not None else heuristic_rank(f)
-            rows.append((q.mid, list(pool.df.smiles.values[cand[order]])))
+            rows.append((q.mid, list(f.smiles.values[order])))
         except Exception as e:  # one bad molecule must never sink the file
             log(f"  {q.mid}: {type(e).__name__}: {e}")
             rows.append((q.mid, []))

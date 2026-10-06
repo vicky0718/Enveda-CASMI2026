@@ -22,7 +22,7 @@ from casmi.paths import ROOT
 ART = ROOT / "data" / "artifacts"
 EVAL = ART / "eval"
 BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_ppm", "frag", "analog_tims",
-              "analog_top5", "t_wmean"]
+              "analog_top5", "t_wmean", "is_gen", "gen_sim", "gen_nsrc"]
 PARAMS = dict(objective="lambdarank", metric="map", eval_at=[25], learning_rate=0.05, num_leaves=31,
               min_data_in_leaf=50, feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1,
               lambdarank_truncation_level=25, verbose=-1, seed=0, deterministic=True, num_threads=4)
@@ -40,7 +40,7 @@ def mrr_of(f, score):
 
 
 def main():
-    regimes = next((a.split("=")[1].split(",") for a in sys.argv if a.startswith("--regimes=")), ["C1", "C2"])
+    regimes = next((a.split("=")[1].split(",") for a in sys.argv if a.startswith("--regimes=")), ["C1", "C2", "C3"])
     f = pd.read_parquet(EVAL / "features.parquet")
     panels = next((a.split("=")[1].split(",") for a in sys.argv if a.startswith("--train-panels=")), ["A", "C"])
     f = f[f.regime.isin(regimes)].reset_index(drop=True)
@@ -63,12 +63,14 @@ def main():
         o = P.heuristic_rank(g)
         heur[g.index[o]] = -np.arange(len(g))
     rep = mrr_of(f, oof).merge(mrr_of(f, heur).rename(columns={"mrr": "mrr_heur"}), on=["qkey", "regime", "panel"])
-    for tau in (0.6, 0.7, 0.8, 0.9):
-        hyb = oof + 100.0 * (f.direct.values >= tau) * f.direct.values
-        h = mrr_of(f, hyb).groupby(["panel", "regime"]).mrr.mean().round(4)
-        print(f"hybrid tau={tau}:", h.to_dict())
     print("train panels", panels)
-    print(rep.groupby(["panel", "regime"])[["mrr", "mrr_heur"]].mean().round(4))
+    tab = rep.groupby(["panel", "regime"])[["mrr", "mrr_heur"]].mean()
+    print(tab.round(4))
+    # class-share weighted estimate (forum algebra: f1 ~ .16, f2 ~ .27-.45, f3 ~ .39-.55)
+    for f1, f2, f3 in ((.16, .30, .54), (.16, .45, .39)):
+        est = {p: round(sum(w * tab.loc[(p, r), "mrr"] for w, r in ((f1, "C1"), (f2, "C2"), (f3, "C3"))
+                            if (p, r) in tab.index), 4) for p in ("A", "C")}
+        print(f"weighted (f1={f1}, f2={f2}, f3={f3}):", est)
     rep.to_parquet(EVAL / "ranker_oof.parquet")
     if "--save" in sys.argv:
         out = ART / "submit"
