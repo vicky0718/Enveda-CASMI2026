@@ -1,7 +1,7 @@
 # Enveda CASMI 2026 — Exploratory Data Analysis
 
 **Data:** `train.parquet` (2,539,608 spectra), the placeholder `test.parquet` (1,213 spectra, 400 molecules) and `sample_submission.csv`.
-**Reproduce:** `PYTHONPATH=src python scripts/eda/0{1,2,3,4}_*.py`. Figures are in [`figures/`](figures) and every number quoted here is in [`stats/`](stats).
+**Reproduce:** run `scripts/eda/01_metadata.py` → `02_peaks.py` → `03_chemistry.py` → `04_library_search.py` → `05a_metric_keys.py` → `05b_deep_dive.py` → `05c_candidate_pool.py` with `PYTHONPATH=src` (5c needs the public COCONUT CSV in `data/external/coconut/`). Figures are in [`figures/`](figures) and every number quoted here is in [`stats/`](stats). Community and literature context: [`../research/`](../research).
 The report contains only aggregate statistics. The competition rules forbid redistributing the raw data.
 
 ---
@@ -11,7 +11,7 @@ The report contains only aggregate statistics. The competition rules forbid redi
 1. **The downloadable `test.parquet` is not a validation set.** All 1,213 of its spectra are exact copies of `enveda-180` rows: synthetic, drug-like, 100% nitrogen-containing screening compounds. The hidden test set is natural-product-like. 34.5% of placeholder spectra also still contain peaks above precursor + 2 Da, which the hidden test set has had removed. **Build local validation from `enveda-np-examples` instead,** or from natural-product structures held out of the public libraries.
 2. **Instrument match and chemistry match pull in opposite directions.** `enveda-180` (45% of the spectra) uses the test instrument (timsTOF) but the wrong chemistry. Its median NP-likeness is −1.49, against +1.42 for the test-like `enveda-np-examples`. Its nearest-neighbour Tanimoto to those examples is only 0.28. The public libraries have the right chemistry (nearest analog Tanimoto 0.78) on the wrong instruments.
 3. **Plain library search works well for class 1, given a clean candidate list.** On the 250 timsTOF natural products, a 10 ppm neutral-mass filter plus binned cosine against public reference spectra gives **MRR@25 = 0.898** (82.8% top-1, 98.4% top-5). Random order within the same mass window gives 0.307. This is optimistic: the candidate pool is only the training structures (median 13 per window), while a PubChem/COCONUT pool for classes 2 and 3 will be far larger.
-4. **Same-compound spectra transfer across high-resolution instruments.** The best cosine between a timsTOF query and the same molecule is about 0.88 on Orbitrap and 0.86 on Q-TOF, but near zero on ion-trap and triple-quad references. Restrict reference libraries to high-resolution spectra.
+4. **Same-compound spectra transfer across high-resolution instruments.** The best similarity between a timsTOF query and the same molecule is about 0.88 on Orbitrap and 0.86 on Q-TOF. *Corrected in pass 5:* ion-trap and triple-quad references looked near zero only because of their low m/z precision; with a 0.5 Da tolerance they reach 0.47 and 0.74. Use them as weaker evidence with loose tolerances, not as noise.
 5. **Label quality differs a lot by library, and `precursor_error_ppm` can mislead.** Large errors are discrete mass offsets: adduct mislabels in GNPS, MassBank and RIKEN (+1.007, +17.03, +18.01, +21.98 Da), and nominal-mass precursors. But in `pluskal_ms2`, **all 50,785 `[M+CH2O2-H]-` spectra show a 1.007 Da "error" even though their precursors are correct** (precursor − M = 44.998 Da exactly). The ppm column is wrong there, not the label. Filtering on `|ppm| > 10` would wrongly drop about 10% of MSnLib.
 6. **Peak lists are on very different footings.** timsTOF spectra have a median of about 140 peaks, of which about 75% are below 0.1% of the base peak. Most public libraries are pre-thresholded and have a median of 9–57 peaks. Several libraries round m/z to 2 decimals (MS-DIAL 34%, MassBank 10%). Apply a common pipeline to everything: drop peaks above precursor + 2 Da, apply an intensity floor, keep the top N, and sqrt-scale.
 7. **Collision energy strongly shapes timsTOF spectra.** For `enveda-180` `[M+H]+`, the precursor peak is present in 98% of spectra at 20 eV, 54% at 40 eV and 5% at 60 eV, and the median base-peak position (fraction of the precursor m/z) falls from 0.58 to 0.37. The test set has 20/40/60 eV spectra plus merged multi-energy ones (25%), and 1–16 spectra per molecule. **Aggregating across a molecule's spectra is essential.**
@@ -190,7 +190,74 @@ Setup (`scripts/eda/04_library_search.py`):
 
 Caveats: (a) the candidate pool is training structures only. Adding PubChem/COCONUT candidates, needed for class 2, will add many no-spectrum isomers that cosine search cannot rank. (b) The np-examples were picked as "common" compounds, so they are friendlier than the hidden class 1. (c) A 0.01 Da binned cosine undersells low-resolution references; tolerance-based or modified-cosine matching is the next step.
 
-## 11. Recommendations
+## 11. Loose ends closed (pass 5: `05a_metric_keys.py`, `05b_deep_dive.py`, `05c_candidate_pool.py`)
+
+These answer questions that the first four passes and the community left open.
+
+**11.1 The metric key is not the shipped `inchikey14`.** We computed the official key (RDKit **2026.03.3** tautomer canonicalisation → InChIKey14; `src/casmi/metric.py` reproduces the official doctests) for all 277,566 training SMILES in 15 min:
+
+| | value |
+|---|---|
+| SMILES whose metric key ≠ shipped `inchikey14` | 1.6 % overall, **6.4 % of np-examples**, 7.7 % RIKEN, 0.5 % enveda-180 |
+| metric keys that merge ≥ 2 shipped structures | 1,541 (covering 3,167 shipped keys) |
+
+Rules: dedupe candidates, build pools and match holdouts on the **metric key**; strip stereo from every candidate before keying (answers are stereo-stripped); pin `rdkit==2026.3.3` (now in `requirements.txt`). Unparseable guesses still occupy a rank in the official scorer.
+
+**11.2 Fragment mass accuracy and the positive-mode offset (verified).** Sub-formula annotation of 9,700 spectra (peaks ≥ 5 %, precursor excluded):
+
+![fragment accuracy](figures/21_fragment_mass_accuracy.png)
+
+| | median error | robust SD |
+|---|---|---|
+| enveda-np-examples positive | **+0.40 mDa** | 0.72 mDa |
+| enveda-np-examples negative | −0.01 mDa | 1.03 mDa |
+| enveda-180 positive / negative | +0.41 / +0.02 mDa | 0.53 / 0.58 mDa |
+| Orbitrap libraries (pluskal) | −0.09 / −0.44 mDa | 0.22 / 0.45 mDa |
+
+* The reported electron-mass calibration error is real: Enveda positive-mode m/z are **+0.4 mDa high** (both libraries). Subtract 0.4–0.55 mDa from positive-mode Enveda m/z before tight matching.
+* True fragments sit within **±2 mDa (≈3 SD)**; the usual 0.01 Da tolerance is ~5× too wide and lets in random matches.
+* The secondary bump at **−4.5 mDa** is ¹³C isotope peaks (+1.00336 Da) matched as an extra hydrogen (+1.00783 Da). At 0.01 Da these masquerade as H-rearrangements; at ≤ 3 mDa they separate. Deisotope first, or model isotopes explicitly.
+
+**11.3 Where noise really begins (decoy-corrected).** Share of peaks explained by a sub-formula of the precursor ion, minus the chance rate measured on the same peaks shifted ±50 mDa:
+
+![noise floor](figures/22_noise_floor_explained_peaks.png)
+
+| relative intensity | enveda-np-examples | enveda-180 | gnps |
+|---|---|---|---|
+| ≥ 10 % | 0.84 | 0.86 | 0.61 |
+| 1–3 % | 0.51 | 0.64 | 0.36 |
+| 0.3–1 % | 0.36 | 0.57 | 0.29 |
+| 0.1–0.3 % | 0.26 | 0.47 | 0.15 |
+| 0.03–0.1 % | 0.19 | 0.36 | 0.05 |
+| < 0.01 % | 0.07 | 0.07 | 0.04 |
+
+timsTOF peaks down to ~0.03 % still carry real fragment information, unlike GNPS at the same level. A hard 1 % floor discards a third to a half of the explainable timsTOF fragments. Prefer a **soft intensity weighting down to ~0.03–0.1 %** (or both views, cf. the forum's +0.019 two-view gain) over a hard 1 % cut-off for timsTOF inputs.
+
+**11.4 Duplicate spectra with conflicting labels: far more than reported.** Hashing all 2.54M spectra finds 40,600 groups of byte-identical spectra (91,946 rows) and **6,785 groups whose rows carry different metric keys** (23,937 rows). 70 % of those are trivial (≤ 3 peaks, mostly RIKEN). The **1,735 non-trivial groups (≥ 10 peaks) are dominated by pluskal_ms2 (1,536)**: one spectrum assigned to two compounds whose precursors differ by ~2 mDa. That is co-isolation in pooled-library acquisitions, so at least one label is wrong. **Drop all rows of non-trivial conflicting groups** from training and reference libraries (list: `stats/duplicate_spectra_conflicting_labels.csv`).
+
+**11.5 Molecule-level coverage of the test-like set** (`enveda-np-examples`): 4.7 spectra per molecule (test 3.0); **52 % have both polarities** (visible test 24 %); 64 % have more than one adduct; 82 % have a merged multi-energy spectrum. Polarity and adduct fusion at molecule level is the norm, not an edge case.
+
+**11.6 Cross-instrument similarity, redone properly** with weighted entropy similarity (Li et al. 2021):
+
+![cross instrument](figures/25_cross_instrument_entropy.png)
+
+Orbitrap 0.88, Q-TOF 0.86 (both tolerance-insensitive); triple quad 0.04 → **0.74**, ion trap 0.00 → **0.47** when the tolerance is 0.5 Da. Section 10's near-zero values were a precision artefact. Low-resolution references are usable at nominal tolerance as weaker evidence.
+
+**11.7 The realistic candidate pool (train ∪ COCONUT, 729,391 structures).**
+
+![pool](figures/26_candidate_pool_landscape.png)
+
+* COCONUT covers **99.6 %** of np-examples, but only 37 % of GNPS and 17 % of pluskal structures.
+* Per test-like molecule the ±10 ppm window holds a median of **58 candidates**, of which **42 (77 %) share the true formula**. Random order inside the formula group gives MRR 0.19. This is the ranking problem that remains.
+* Pathways of the test-like set: alkaloids 33 %, shikimates/phenylpropanoids 26 %, terpenoids 19 %, amino acids/peptides 9 %, polyketides 8 %, fatty acids 4 %. Alkaloids, phenylpropanoids and peptides are over-represented relative to COCONUT in the same mass range; fatty acids are under-represented (4 % vs 11 %).
+
+**11.8 What separates a test-like molecule from its nearest training analog** (what class-3 generation must bridge):
+
+![deltas](figures/24_biosynthetic_deltas.png)
+
+The median nearest-analog Tanimoto is 0.78, and 74 % of molecules have an analog at ≥ 0.7. **56 % have a close analog that is one standard biosynthetic edit away**: ±CH₂ (18 %), ±O (16 %), same-formula isomer (5 %), ±hexose (3 %), ±H₂, ±C₂H₄, ±C₂H₂O. Editing close analogs (methylation, hydroxylation, glycosylation, reduction) covers a majority of unseen test-like structures in principle. Its failure on the forum was a *scoring* problem (no isomer-resolving scorer), not a coverage problem.
+
+## 12. Recommendations
 
 **Validation**
 * Hold out `enveda-np-examples` as the primary local validation set, grouped by structure to mimic `molecule_id`.
@@ -198,7 +265,9 @@ Caveats: (a) the candidate pool is training structures only. Adding PubChem/COCO
 * Never tune on the placeholder `test.parquet`.
 
 **Preprocessing (one pipeline for all libraries)**
-* Drop peaks above precursor + 2 Da, apply a relative-intensity floor (0.1–1%), deisotope, keep the top N or the top k per 50 Da window, and sqrt-scale.
+* Drop peaks above precursor + 2 Da, deisotope, keep the top N or the top k per 50 Da window, and sqrt-scale. For **timsTOF** inputs prefer a soft intensity weighting down to ~0.03–0.1 % (§11.3) over a hard 1 % floor; public libraries are already pre-thresholded.
+* Correct Enveda positive-mode m/z by −0.4 mDa, and match fragments at **≤ 3 mDa** (high-res) or **0.5 Da** (ion trap / QqQ), not a blanket 0.01 Da (§11.2, §11.6).
+* Key everything (deduplication, pools, holdouts) on the **metric key** with stereo stripped (§11.1). Drop rows in non-trivial conflicting-duplicate groups (§11.4).
 * Take the absolute value of `collision_energy_ev`, and keep `ce_n` (merged vs single energy) as a feature.
 * Drop or down-weight dimer adducts and adducts not in the test set, except for pretraining.
 * Use `|ppm| ≤ 10–20` as a quality filter, but exempt the `pluskal_ms2` formate set. Optionally recover offset-mislabelled spectra by re-assigning the adduct.

@@ -244,7 +244,8 @@ def build():
         "Section 1 explains the competition goal with no chemistry background assumed. Section 2 explains how the "
         "measurements work. Section 3 describes the data. Section 4 lists the twelve most important things the data "
         "analysis revealed: each says <i>what we saw</i> and <i>why it matters</i>. Section 5 shows a first working "
-        "baseline, and Section 6 gives the recommended plan. A glossary is at the end.",
+        "baseline. Section 6 adds what the competition forum, the research literature and a second, deeper data "
+        "pass taught us, and Section 7 gives the recommended plan. A glossary is at the end.",
         "All numbers come from the analysis code in the project repository (<i>scripts/eda/</i>). The document "
         "contains summary statistics only, because the competition rules do not allow sharing the raw data.",
     ]))
@@ -515,12 +516,13 @@ def build():
     st.append(figure("04_adducts_by_library", "Figure 13. Adduct mix per library. Columns are the ten adducts used "
                      "in the test; the last column is everything else.", width=CONTENT_W * 0.9))
 
-    st.append(finding(12, "The same molecule looks similar on modern instruments, but not on older ones",
+    st.append(finding(12, "The same molecule looks similar on modern instruments, less so on older ones",
         "For each natural-product example we compared its timsTOF spectrum with spectra of the same molecule from "
         "other instruments. The best match scores about 0.88 against Orbitrap and 0.86 against Q-TOF instruments "
-        "(1 = identical), but close to 0 against ion-trap and triple-quadrupole instruments.",
-        "Reference spectra from high-resolution instruments (Orbitrap, Q-TOF) are useful for matching against the "
-        "test. Low-resolution libraries are much less useful for direct matching."))
+        "(1 = identical). Ion-trap and triple-quadrupole instruments first looked like 0, but that turned out to be "
+        "because they record weights only to the nearest whole number: allowing for that, they score 0.47 and 0.74.",
+        "High-resolution reference spectra (Orbitrap, Q-TOF) are the most useful. Low-resolution libraries are "
+        "still usable as weaker evidence if we compare them with a looser weight tolerance."))
     st.append(PageBreak())
 
     # ===== 5. Baseline =====
@@ -553,8 +555,72 @@ def build():
     ], wash=WASH_ORANGE, bar=ORANGE))
     st.append(PageBreak())
 
-    # ===== 6. Recommendations =====
-    st.append(P("6. What we recommend doing next", "h1"))
+    # ===== 6. Deep dive, community, research =====
+    st.append(P("6. What the deep dive, the community and the research added", "h1"))
+    st.append(P("After the first analysis we went further in three directions: we read every discussion on the "
+                "competition forum and the most popular public notebooks, we reviewed the scientific literature, and we "
+                "ran a second, more forensic pass over the data. This section summarises what changed our view."))
+    st.append(P("What the leaderboard and forum tell us", "h2"))
+    st += bullets([
+        "<b>Scores so far.</b> After three weeks the best public score is 0.473, rank 15 is about 0.43, and 169 "
+        "teams are packed between 0.415 and 0.420. Many of those copy the same public notebooks, and some rely on a "
+        "known loophole in the sample test file that the organisers are expected to close. We will not use it.",
+        "<b>How the hidden test is probably split.</b> Teams have worked out from their scores that roughly "
+        "<b>16%</b> of test molecules are 'known and measured', <b>27–45%</b> 'known, never measured', and "
+        "<b>39–55% brand-new</b>. Every public approach scores about zero on the brand-new group.",
+        "<b>Where points are lost.</b> When the right answer is in the shortlist but not first, the molecule that "
+        "beats it has exactly the same formula 95–98% of the time. Telling these look-alikes apart is the core "
+        "problem; adding more candidates without solving it makes scores worse.",
+        "<b>Hard lessons shared by others.</b> Practice tests must hide a molecule from every library, not just "
+        "one; leaderboard differences under about 0.015 are noise; and change one thing at a time.",
+    ])
+    st.append(P("What the deep dive found in the data", "h2"))
+    st += bullets([
+        "<b>The scoring key is not the shipped key.</b> For 6.4% of the test-like molecules, the code the scorer "
+        "uses to decide 'same molecule' differs from the inchikey14 column in the files. We now reproduce the "
+        "official scorer exactly, including its pinned RDKit version.",
+        "<b>The test instrument reads 0.4 thousandths of a dalton heavy in positive mode.</b> We confirmed a small "
+        "calibration offset reported on the forum. Real fragments sit within about ±0.002 Da of their true "
+        "weight, so the commonly used tolerance of 0.01 Da is five times too loose and lets random matches in.",
+        "<b>Faint peaks are not just noise.</b> Even peaks at 0.03–0.1% of the tallest peak are often real "
+        "fragments on the test instrument (figure 15), so cutting everything below 1% throws information away.",
+        "<b>Some training labels contradict each other.</b> 1,735 groups of identical, information-rich spectra are "
+        "labelled as different molecules, mostly in one library (MSnLib) where two compounds of almost the same "
+        "weight were measured together. These rows should be removed.",
+        "<b>Most test-like molecules have a close relative one small step away.</b> 56% are a single "
+        "'biosynthetic edit' (adding or removing CH<sub>2</sub>, an oxygen, a sugar…) from a known structure "
+        "(figure 16). That is the opening for building brand-new candidates.",
+        "<b>The shortlist is crowded.</b> In the realistic candidate pool (729,391 known structures) a test-like "
+        "molecule has about 58 candidates of the right weight, 42 of them with exactly the right formula (figure 17).",
+    ])
+    st.append(figure("22_noise_floor_explained_peaks", "Figure 15. Share of peaks that can be explained as a real piece "
+                     "of the molecule, by peak size, after removing what random matching would explain. The test "
+                     "instrument (green, blue) keeps real signal far below 1%.", width=CONTENT_W * 0.9))
+    st.append(figure("24_biosynthetic_deltas", "Figure 16. How each test-like molecule differs from its closest known "
+                     "relative: mostly one methyl group (CH2) or one oxygen.", width=CONTENT_W * 0.85))
+    st.append(figure("26_candidate_pool_landscape", "Figure 17. Left: chemical families of the test-like molecules. "
+                     "Right: how many candidates share the right weight (blue) and the exact formula (orange)."))
+    st.append(P("What the research literature offers", "h2"))
+    st += bullets([
+        "<b>Spectrum simulators</b> (ICEBERG, GLACIER, MARASON) predict the spectrum a candidate would produce. "
+        "They are the best known way to tell same-formula look-alikes apart, and none of the public notebooks has "
+        "tuned one to the test instrument yet, even though 1.15 million spectra from it are in the training data.",
+        "<b>New generators for brand-new molecules</b> (FRIGID, FOAM, 2026) build structures from the spectrum and "
+        "check them with a simulator. They report 15–25% exact hits on public benchmarks. Their released models are "
+        "allowed in this competition.",
+        "<b>Merging safely.</b> Generated guesses can push correct answers down. Ordering every candidate by a "
+        "well-calibrated probability of being right is mathematically the best way to combine them.",
+    ])
+    st.append(callout("Our plan in one paragraph", [
+        "Build an honest practice test first. Reproduce the strong public approach from our own parts. Then add "
+        "two things almost nobody has: a spectrum simulator tuned to the test instrument, to pick the right "
+        "look-alike, and a generator for brand-new molecules, merged in only where it is confident. The full "
+        "plan is in reports/research/STRATEGY_TO_GOLD.md.",
+    ], wash=WASH_ORANGE, bar=ORANGE))
+    st.append(PageBreak())
+
+    # ===== 7. Recommendations =====
+    st.append(P("7. What we recommend doing next", "h1"))
     st.append(P("Step 1: build an honest practice test", "h2"))
     st += bullets([
         "Use the 250 <i>enveda-np-examples</i> molecules as the main practice test, grouped by molecule like the real test.",
@@ -564,8 +630,13 @@ def build():
     ])
     st.append(P("Step 2: clean all data the same way", "h2"))
     st += bullets([
-        "Remove peaks heavier than the molecule (+2 Da), drop very small peaks (below 0.1–1% of the tallest), remove "
-        "duplicate isotope peaks, keep the strongest ~64–128 peaks, and compress intensities (square root).",
+        "Remove peaks heavier than the molecule (+2 Da), remove duplicate isotope peaks, keep the strongest ~64–128 "
+        "peaks, and compress intensities (square root). For test-instrument spectra, down-weight faint peaks "
+        "rather than deleting everything below 1%.",
+        "Match fragment weights within about 0.002–0.003 Da (after correcting the 0.0004 Da positive-mode offset), "
+        "or within 0.5 Da for low-resolution reference libraries.",
+        "Identify molecules with the scorer's own key (stereochemistry removed), and drop the contradictory "
+        "duplicate rows.",
         "Flip negative collision energies to positive and record whether a spectrum is merged from several energies.",
         "Drop or down-weight dimer and other non-test adducts; filter mislabelled spectra, except the MSnLib formate "
         "group, whose 'error' is a bookkeeping artefact.",
@@ -578,8 +649,9 @@ def build():
         "<b>Class 2 (known, never measured):</b> package an offline subset of PubChem/COCONUT within the test weight "
         "range, predict the formula first, then rank candidates with a model that scores how well a structure "
         "explains the spectrum (CSI:FingerID or MIST-style).",
-        "<b>Class 3 (brand-new):</b> generate structures conditioned on the predicted formula and spectrum, starting "
-        "from public natural-product relatives.",
+        "<b>Class 3 (brand-new):</b> generate structures with the new spectrum-guided generators and by editing close "
+        "relatives (one methyl, oxygen or sugar away), check each with the spectrum simulator, and only rank them "
+        "high when the model is confident the answer is not already in the database.",
         "<b>Use each data source for what it is good at:</b> enveda-180 for learning how the test instrument and "
         "energies behave; the public natural-product libraries for learning the right chemistry.",
     ])
@@ -618,8 +690,9 @@ def build():
     st.append(Spacer(1, 12))
     st.append(P("Where the numbers come from", "h2"))
     st.append(P("All figures and statistics were produced by the analysis scripts in the project repository "
-                "(<i>scripts/eda/01_metadata.py</i> to <i>04_library_search.py</i>). The detailed technical report "
-                "is <i>reports/eda/EDA_REPORT.md</i>, and the underlying tables are in <i>reports/eda/stats/</i>.",
+                "(<i>scripts/eda/01_metadata.py</i> to <i>05c_candidate_pool.py</i>). The detailed technical report "
+                "is <i>reports/eda/EDA_REPORT.md</i> and the underlying tables are in <i>reports/eda/stats/</i>. The "
+                "forum analysis, literature review and plan are in <i>reports/research/</i>.",
                 "small"))
     return st
 

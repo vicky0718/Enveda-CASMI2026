@@ -1,0 +1,310 @@
+{
+  "fragment_mass_accuracy": {
+    "enveda-180|negative": {
+      "n_peaks": 4087,
+      "median_err_mDa": 0.02,
+      "robust_sd_mDa": 0.582,
+      "median_err_ppm": 0.125
+    },
+    "enveda-180|positive": {
+      "n_peaks": 18064,
+      "median_err_mDa": 0.41,
+      "robust_sd_mDa": 0.533,
+      "median_err_ppm": 2.872
+    },
+    "enveda-np-examples|negative": {
+      "n_peaks": 4245,
+      "median_err_mDa": -0.015,
+      "robust_sd_mDa": 1.028,
+      "median_err_ppm": -0.086
+    },
+    "enveda-np-examples|positive": {
+      "n_peaks": 16512,
+      "median_err_mDa": 0.402,
+      "robust_sd_mDa": 0.723,
+      "median_err_ppm": 2.366
+    },
+    "gnps|negative": {
+      "n_peaks": 1478,
+      "median_err_mDa": -0.18,
+      "robust_sd_mDa": 0.787,
+      "median_err_ppm": -0.996
+    },
+    "gnps|positive": {
+      "n_peaks": 10716,
+      "median_err_mDa": -0.002,
+      "robust_sd_mDa": 0.483,
+      "median_err_ppm": -0.01
+    },
+    "massbank|negative": {
+      "n_peaks": 1716,
+      "median_err_mDa": -0.022,
+      "robust_sd_mDa": 0.645,
+      "median_err_ppm": -0.139
+    },
+    "massbank|positive": {
+      "n_peaks": 6695,
+      "median_err_mDa": 0.009,
+      "robust_sd_mDa": 0.529,
+      "median_err_ppm": 0.051
+    },
+    "mona|negative": {
+      "n_peaks": 2771,
+      "median_err_mDa": -0.386,
+      "robust_sd_mDa": 1.581,
+      "median_err_ppm": -1.534
+    },
+    "mona|positive": {
+      "n_peaks": 15089,
+      "median_err_mDa": 0.023,
+      "robust_sd_mDa": 0.769,
+      "median_err_ppm": 0.18
+    },
+    "msdial|negative": {
+      "n_peaks": 4002,
+      "median_err_mDa": -0.183,
+      "robust_sd_mDa": 3.777,
+      "median_err_ppm": -0.686
+    },
+    "msdial|positive": {
+      "n_peaks": 11585,
+      "median_err_mDa": -0.056,
+      "robust_sd_mDa": 1.972,
+      "median_err_ppm": -0.236
+    },
+    "pluskal_ms2|negative": {
+      "n_peaks": 1754,
+      "median_err_mDa": -0.437,
+      "robust_sd_mDa": 0.447,
+      "median_err_ppm": -3.192
+    },
+    "pluskal_ms2|positive": {
+      "n_peaks": 5393,
+      "median_err_mDa": -0.09,
+      "robust_sd_mDa": 0.224,
+      "median_err_ppm": -0.727
+    },
+    "riken|negative": {
+      "n_peaks": 982,
+      "median_err_mDa": -0.393,
+      "robust_sd_mDa": 1.526,
+      "median_err_ppm": -2.241
+    },
+    "riken|positive": {
+      "n_peaks": 7819,
+      "median_err_mDa": -0.01,
+      "robust_sd_mDa": 1.1,
+      "median_err_ppm": -0.04
+    }
+  },
+  "enveda-np-examples_pos_minus_neg_median_mDa": 0.41700000000000004,
+  "enveda-180_pos_minus_neg_median_mDa": 0.38999999999999996,
+  "noise_floor": {
+    "enveda-180": {
+      "<0.01%": 0.069,
+      "0.01\u20130.03%": 0.236,
+      "0.03\u20130.1%": 0.358,
+      "0.1\u20130.3%": 0.472,
+      "0.3\u20131%": 0.565,
+      "1\u20133%": 0.64,
+      "3\u201310%": 0.638,
+      "\u226510%": 0.86
+    },
+    "enveda-np-examples": {
+      "<0.01%": 0.071,
+      "0.01\u20130.03%": 0.145,
+      "0.03\u20130.1%": 0.191,
+      "0.1\u20130.3%": 0.264,
+      "0.3\u20131%": 0.361,
+      "1\u20133%": 0.507,
+      "3\u201310%": 0.64,
+      "\u226510%": 0.836
+    },
+    "gnps": {
+      "<0.01%": 0.041,
+      "0.01\u20130.03%": 0.028,
+      "0.03\u20130.1%": 0.049,
+      "0.1\u20130.3%": 0.152,
+      "0.3\u20131%": 0.287,
+      "1\u20133%": 0.363,
+      "3\u201310%": 0.485,
+      "\u226510%": 0.608
+    },
+    "massbank": {
+      "<0.01%": NaN,
+      "0.01\u20130.03%": NaN,
+      "0.03\u20130.1%": NaN,
+      "0.1\u20130.3%": 0.55,
+      "0.3\u20131%": 0.521,
+      "1\u20133%": 0.577,
+      "3\u201310%": 0.688,
+      "\u226510%": 0.785
+    },
+    "mona": {
+      "<0.01%": 0.03,
+      "0.01\u20130.03%": 0.061,
+      "0.03\u20130.1%": 0.057,
+      "0.1\u20130.3%": 0.153,
+      "0.3\u20131%": 0.26,
+      "1\u20133%": 0.296,
+      "3\u201310%": 0.24,
+      "\u226510%": 0.56
+    },
+    "msdial": {
+      "<0.01%": NaN,
+      "0.01\u20130.03%": NaN,
+      "0.03\u20130.1%": NaN,
+      "0.1\u20130.3%": NaN,
+      "0.3\u20131%": NaN,
+      "1\u20133%": 0.545,
+      "3\u201310%": 0.201,
+      "\u226510%": 0.57
+    },
+    "pluskal_ms2": {
+      "<0.01%": NaN,
+      "0.01\u20130.03%": 1.0,
+      "0.03\u20130.1%": 0.56,
+      "0.1\u20130.3%": 0.611,
+      "0.3\u20131%": 0.698,
+      "1\u20133%": 0.784,
+      "3\u201310%": 0.865,
+      "\u226510%": 0.899
+    },
+    "riken": {
+      "<0.01%": NaN,
+      "0.01\u20130.03%": NaN,
+      "0.03\u20130.1%": NaN,
+      "0.1\u20130.3%": NaN,
+      "0.3\u20131%": 0.234,
+      "1\u20133%": 0.188,
+      "3\u201310%": 0.278,
+      "\u226510%": 0.448
+    }
+  },
+  "np_examples_coverage": {
+    "molecules": 250,
+    "spectra_per_molecule": {
+      "count": 250.0,
+      "mean": 4.74,
+      "std": 3.16,
+      "min": 1.0,
+      "25%": 2.0,
+      "50%": 4.0,
+      "75%": 6.0,
+      "max": 17.0
+    },
+    "polarity_mix": {
+      "negative+positive": 130,
+      "positive": 102,
+      "negative": 18
+    },
+    "share_multi_adduct": 0.64,
+    "share_with_merged_spectrum": 0.824,
+    "single_energy_count_dist": {
+      "0": 76,
+      "1": 28,
+      "2": 22,
+      "3": 51,
+      "4": 71,
+      "5": 2
+    }
+  },
+  "duplicate_spectra_rows": 91946,
+  "duplicate_groups": 40600,
+  "duplicate_groups_conflicting_metric_key": 6785,
+  "rows_in_conflicting_groups": 23937,
+  "conflict_library_pairs": {
+    "riken": 4082,
+    "pluskal_ms2": 1882,
+    "msdial+riken": 309,
+    "gnps": 152,
+    "massbank": 88,
+    "massbank+riken": 61,
+    "massbank+msdial+riken": 53,
+    "massbank+msdial": 31,
+    "gnps+massbank": 28,
+    "mona": 25
+  },
+  "same_compound_best_entropy_by_family": {
+    "Ion trap": {
+      "ent_0p01": 0.0,
+      "ent_0p5": 0.474,
+      "molecules": 118
+    },
+    "Orbitrap / FT": {
+      "ent_0p01": 0.88,
+      "ent_0p5": 0.881,
+      "molecules": 236
+    },
+    "Q-TOF / TOF": {
+      "ent_0p01": 0.862,
+      "ent_0p5": 0.874,
+      "molecules": 230
+    },
+    "Triple quad": {
+      "ent_0p01": 0.035,
+      "ent_0p5": 0.743,
+      "molecules": 103
+    },
+    "other": {
+      "ent_0p01": 0.185,
+      "ent_0p5": 0.653,
+      "molecules": 2
+    },
+    "unknown": {
+      "ent_0p01": 0.807,
+      "ent_0p5": 0.819,
+      "molecules": 203
+    }
+  },
+  "biosynthetic_deltas": {
+    "enveda-np-examples": {
+      "n": 250,
+      "median_tanimoto": 0.7833333333333333,
+      "share_nn_tanimoto_ge_0.7": 0.74,
+      "share_delta_in_common_set": 0.688,
+      "share_close_and_common": 0.556,
+      "top_deltas_close_analogs": {
+        "-CH2": 25,
+        "-O": 23,
+        "+CH2": 19,
+        "+O": 17,
+        "isomer (0)": 12,
+        "-C6H10O5": 7,
+        "+H2-O": 5,
+        "+H2": 5,
+        "+C2H4": 4,
+        "-CH2O": 4,
+        "-C2H2O": 4,
+        "+O-CH2": 3,
+        "+O-HN": 3,
+        "-C2H4": 3,
+        "+O-H2": 3
+      }
+    },
+    "public NP-like (NP-likeness > 1)": {
+      "n": 2000,
+      "median_tanimoto": 0.8,
+      "share_nn_tanimoto_ge_0.7": 0.72,
+      "share_delta_in_common_set": 0.592,
+      "share_close_and_common": 0.458,
+      "top_deltas_close_analogs": {
+        "isomer (0)": 125,
+        "-CH2": 118,
+        "+CH2": 112,
+        "+O": 79,
+        "-O": 78,
+        "-C2H4": 67,
+        "-H2": 50,
+        "+C2H4": 49,
+        "-C2H2O": 31,
+        "+C2H2": 31,
+        "+CH2O": 28,
+        "+C2H2O": 25,
+        "-CH2O": 24,
+        "+H2": 22,
+        "+C6H10O5": 21
+      }
+    }
+  }
+}

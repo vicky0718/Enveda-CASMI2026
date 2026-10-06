@@ -31,7 +31,12 @@ PYTHONPATH=src python scripts/eda/01_metadata.py        # ~30 s
 PYTHONPATH=src python scripts/eda/02_peaks.py           # ~15 min first run (3 workers, ~10 GB RAM), cached after
 PYTHONPATH=src python scripts/eda/03_chemistry.py       # ~10 min (RDKit, 4 workers), descriptors cached
 PYTHONPATH=src python scripts/eda/04_library_search.py  # ~5 min, needs the 03 descriptor cache
+PYTHONPATH=src python scripts/eda/05a_metric_keys.py    # ~15 min, metric keys for all structures
+PYTHONPATH=src python scripts/eda/05b_deep_dive.py      # ~10 min, needs 05a
+PYTHONPATH=src python scripts/eda/05c_candidate_pool.py # needs COCONUT CSV in data/external/coconut/
 ```
+
+Scoring uses `rdkit==2026.3.3` exactly; `src/casmi/metric.py` replicates the official scorer.
 
 Intermediate caches go to `data/interim/` (git-ignored).
 
@@ -43,3 +48,5 @@ Intermediate caches go to `data/interim/` (git-ignored).
 | `scripts/eda/` | The four EDA passes (metadata, peaks, chemistry, library-search baseline) |
 | `src/casmi/` | Shared code: streaming parquet IO, peak features, spectrum cleaning and cosine, plot style |
 | `reports/eda/` | EDA report, figures and stats tables (aggregates only, no raw data) |
+| `reports/research/` | Kaggle forum & notebook intelligence, literature review, strategy to gold |
+| `scripts/research/` | Read-only scraper for the competition forum and leaderboard |
