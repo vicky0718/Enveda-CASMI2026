@@ -12,7 +12,8 @@ CELLS = [
     r'''# CASMI 2026 — own pipeline: library + analog propagation + FP model + ranker (offline)
 import glob, os, shutil, subprocess, sys, time
 T0 = time.time()
-whl = glob.glob("/kaggle/input/**/rdkit*.whl", recursive=True)  # metric/rdkit-2026-3-3-wheel (host's)
+tag = f"cp{sys.version_info.major}{sys.version_info.minor}"  # one wheel per Python version is shipped
+whl = [w for w in glob.glob("/kaggle/input/**/rdkit*.whl", recursive=True) if f"-{tag}-" in w][:1]
 print("wheels", whl)
 if whl:
     subprocess.run([sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "-q", *whl], check=False)
