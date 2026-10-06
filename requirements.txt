@@ -6,7 +6,7 @@ scipy
 scikit-learn
 matplotlib
 seaborn
-rdkit>=2026.3.3
+rdkit==2026.3.3  # pinned: the competition metric uses exactly this version
 jupyter
 nbconvert
 nbformat
