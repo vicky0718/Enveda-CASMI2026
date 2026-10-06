@@ -11,3 +11,5 @@ jupyter
 nbconvert
 nbformat
 kaggle
+reportlab
+pypdf

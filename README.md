@@ -21,7 +21,9 @@ forbid redistributing it.
 
 ## EDA
 
-The full report, with key findings and recommendations, is
+A plain-language PDF guide (competition goal + findings) is
+[`reports/CASMI2026_Competition_and_EDA_Guide.pdf`](reports/CASMI2026_Competition_and_EDA_Guide.pdf)
+(rebuild: `PYTHONPATH=src python scripts/make_guide_pdf.py`). The technical report is
 [`reports/eda/EDA_REPORT.md`](reports/eda/EDA_REPORT.md). Regenerate it with:
 
 ```bash
