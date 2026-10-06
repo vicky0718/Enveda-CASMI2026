@@ -44,8 +44,7 @@ def build_queries(lib: Library, seed=0):
         rows = np.flatnonzero((lc == libs.index(src)) & np.isin(lib.key, list(keys)))
         df = pd.DataFrame({"lrow": rows, "key": lib.key[rows]})
         if panel == "B":
-            df = df.groupby("key", group_keys=False).apply(
-                lambda g: g.sample(min(3, len(g)), random_state=int(rng.integers(1 << 30))))
+            df = df.sample(frac=1.0, random_state=int(rng.integers(1 << 30))).groupby("key").head(3)
         df["panel"] = panel
         df["src_lib"] = libs.index(src)
         out.append(df)

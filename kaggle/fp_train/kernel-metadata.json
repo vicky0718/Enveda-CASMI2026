@@ -1,6 +1,6 @@
 {
-  "id": "vigneshnehru/casmi26-fp-train",
-  "title": "casmi26-fp-train",
+  "id": "vigneshnehru/casmi26-fpnet-train",
+  "title": "casmi26-fpnet-train",
   "code_file": "train_fp.py",
   "language": "python",
   "kernel_type": "script",
