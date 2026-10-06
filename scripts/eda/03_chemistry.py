@@ -117,7 +117,7 @@ def main():
 
     # ---------- F14: descriptor distributions (small multiples) ----------
     panels = [("exact_mass", "Monoisotopic mass (Da)", (100, 1300)), ("np_likeness", "NP-likeness score", (-4, 4)),
-              ("fsp3", "Fraction sp3 carbon", (0, 1)), ("logp", "Crippen logP", (-6, 10)),
+              ("fsp3", "Fraction sp3 carbon", (0, 1)), ("logp", "Crippen logP (clipped to −6…10)", (-6, 10)),
               ("aromatic_rings", "Aromatic rings", (0, 7)), ("stereocentres", "Stereocentres (potential)", (0, 20))]
     fig, axes = plt.subplots(2, 3, figsize=(15, 7.5), gridspec_kw={"hspace": 0.45, "wspace": 0.28})
     for ax, (col, lab, (lo, hi)) in zip(axes.flat, panels):
@@ -175,7 +175,7 @@ def main():
     axes[0].set_xscale("log")
     axes[0].set_xlabel("Training structures sharing the exact molecular formula (log)")
     axes[0].set_ylabel("Density")
-    axes[0].set_title("Isomers in train: a correct formula still leaves many candidates")
+    axes[0].set_title("Same-formula isomers in train")
     axes[0].legend()
     ppms = [1, 2, 3, 5, 10, 20]
     for g, x, c in [("public libraries", d[d.in_public].sample(5000, random_state=0), OTHER),
@@ -186,7 +186,7 @@ def main():
     axes[1].set_xticks(ppms, [str(p) for p in ppms])
     axes[1].set_xlabel("Mass tolerance (ppm)")
     axes[1].set_ylabel("Median training structures in window")
-    axes[1].set_title("Candidates by neutral mass alone (train only; PubChem is far larger)")
+    axes[1].set_title("Train candidates by neutral mass (PubChem: far more)")
     axes[1].legend()
     save(fig, "16_formula_mass_ambiguity")
 
