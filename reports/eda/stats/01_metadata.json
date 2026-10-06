@@ -1,0 +1,95 @@
+{
+  "n_spectra": 2539608,
+  "n_structures": 275810,
+  "structures_in_one_library_share": 0.8980711359269062,
+  "spectra_per_structure": {
+    "count": 275810.0,
+    "mean": 9.21,
+    "std": 21.07,
+    "min": 1.0,
+    "50%": 6.0,
+    "90%": 14.0,
+    "99%": 79.0,
+    "max": 1468.0
+  },
+  "n_adducts_train": 121,
+  "share_spectra_in_test_adducts": 0.8571704767034912,
+  "top_adducts_train": {
+    "[M+H]+": 1324585,
+    "[M-H]-": 465688,
+    "[2M+Na]+": 190033,
+    "[M+Na]+": 178092,
+    "[2M+H]+": 92041,
+    "[M+CH2O2-H]-": 83188,
+    "[2M-H]-": 56172,
+    "[M+NH4]+": 53452,
+    "[M+Cl]-": 27511,
+    "[M-H2O+H]+": 21682,
+    "[M+K]+": 18955,
+    "[M]+": 8818,
+    "[M+C2H4O2-H]-": 7436,
+    "[M-2H2O+H]+": 3439,
+    "[M+2H]2+": 1717
+  },
+  "test_placeholder_adducts": {
+    "[M+H]+": 959,
+    "[M-H]-": 193,
+    "[M+CH2O2-H]-": 31,
+    "[M+Na]+": 22,
+    "[M+NH4]+": 4,
+    "[M+K]+": 2,
+    "[M+Cl]-": 2
+  },
+  "n_instrument_strings": 82,
+  "test_ce_values": {
+    "60": 289,
+    "40": 281,
+    "20,40,60": 257,
+    "20": 160,
+    "-40": 81,
+    "-60": 74,
+    "-60,-40,-20": 41,
+    "-20": 30
+  },
+  "test_multi_energy_share": 0.24567188788128608,
+  "pluskal_formate_share_offset_1p007": 1.0,
+  "pluskal_formate_spectra": 50785,
+  "test_placeholder_match": {
+    "spectra": 1213,
+    "molecules": 400,
+    "matched_spectra": 1213,
+    "source_libraries": {
+      "enveda-180": 1213
+    }
+  },
+  "test_spectra_per_molecule": {
+    "count": 400.0,
+    "mean": 3.03,
+    "std": 1.38,
+    "min": 1.0,
+    "25%": 2.0,
+    "50%": 3.0,
+    "75%": 4.0,
+    "max": 9.0
+  },
+  "test_base_peak_intensity": {
+    "count": 1213.0,
+    "mean": 3509205.0,
+    "std": 8547499.0,
+    "min": 1018.0,
+    "25%": 86896.0,
+    "50%": 474227.0,
+    "75%": 2768804.0,
+    "max": 112380979.0
+  },
+  "test_num_peaks": {
+    "count": 1213.0,
+    "mean": 330.0,
+    "std": 349.0,
+    "min": 4.0,
+    "5%": 21.0,
+    "50%": 230.0,
+    "95%": 977.0,
+    "max": 3259.0
+  }
+}

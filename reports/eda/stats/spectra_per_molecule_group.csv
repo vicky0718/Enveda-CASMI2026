@@ -1,0 +1,13 @@
+ingest_lib,median_spectra_per_molecule,max_spectra_per_molecule
+enveda-180,6.0,46.0
+pluskal_ms2,10.0,155.0
+riken,5.0,1100.0
+gnps,2.0,462.0
+massbank,5.0,181.0
+mona,3.0,126.0
+spectraverse,2.0,204.0
+msdial,2.0,67.0
+drug_plus,1.0,2.0
+enveda-np-examples,4.0,17.0
+masaryk,2.0,2.0
+test (placeholder),3.0,9.0

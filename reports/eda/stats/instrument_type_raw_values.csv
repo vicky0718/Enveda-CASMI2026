@@ -1,0 +1,84 @@
+instrument_type,spectra,family
+timsTOF,1154969,timsTOF
+Orbitrap,745562,Orbitrap / FT
+QTOF,125936,Q-TOF / TOF
+LC-ESI-QTOF,104482,Q-TOF / TOF
+ESI-QFT,77342,Orbitrap / FT
+LC-ESI-QFT,55024,Orbitrap / FT
+LC-ESI-ITFT,45109,Orbitrap / FT
+qTof,33777,Q-TOF / TOF
+<null>,33053,other
+ToF,26535,Q-TOF / TOF
+qtof,26111,Q-TOF / TOF
+LC-ESI-QQ,19283,Triple quad
+orbitrap,15361,Orbitrap / FT
+Linear Ion Trap,10241,Ion trap
+Hybrid FT,9137,Orbitrap / FT
+Flow-injection QqQ/MS,8721,Triple quad
+iontrap,8595,Ion trap
+Maxis II HD Q-TOF Bruker,7589,Q-TOF / TOF
+ESI-QTOF,5708,Q-TOF / TOF
+LC-ESI-QQQ,3097,Triple quad
+qToF,2853,Q-TOF / TOF
+Ion Trap,1958,Ion trap
+LC-ESI-IT,1714,Ion trap
+LC-ESI-TOF,1321,Q-TOF / TOF
+QQQ,1281,Triple quad
+QIT,1261,Ion trap
+ESI-TOF,1219,Q-TOF / TOF
+LC-Q-TOF/MS,1006,Q-TOF / TOF
+LC-APPI-QQ,986,Triple quad
+nan,972,unknown
+QqQ,733,Triple quad
+Quattro_QQQ:10eV,728,Triple quad
+Quattro_QQQ:25eV,722,Triple quad
+Quattro_QQQ:40eV,715,Triple quad
+LC-ESI-QIT,620,Ion trap
+LC-ESI-Orbitrap,531,Orbitrap / FT
+Q-Exactive Plus,401,Orbitrap / FT
+LC-QTOF,388,Q-TOF / TOF
+N/A,376,unknown
+LC-Orbitrap MS,347,Orbitrap / FT
+FAB-EBEB,340,other
+,297,unknown
+impact HD,284,Q-TOF / TOF
+Q-Exactive Plus Orbitrap Res 70k,277,Orbitrap / FT
+APCI-ITFT,276,Orbitrap / FT
+Maxis HD qTOF,252,Q-TOF / TOF
+LC-ESI-QEHF,238,other
+Q-TOF,203,Q-TOF / TOF
+Q-Exactive Plus Orbitrap Res 14k,200,Orbitrap / FT
+qTOF,161,Q-TOF / TOF
+LC-APCI-ITFT,153,Orbitrap / FT
+LC-ESI-FT,152,Orbitrap / FT
+LC-ESI-ITTOF,146,Q-TOF / TOF
+ESI-ITFT,140,Orbitrap / FT
+LC-APCI-QFT,130,Orbitrap / FT
+ESI-FT,122,Orbitrap / FT
+LC-ESI-Q-Orbitrap,111,Orbitrap / FT
+GC-APCI-QTOF,78,Q-TOF / TOF
+LC-ESI-Q,57,other
+MALDI-TOFTOF,46,Q-TOF / TOF
+in source CID,42,other
+GC-EI-Q,35,other
+MALDI-QITTOF,22,Q-TOF / TOF
+LIT,11,Ion trap
+Qtof,10,Q-TOF / TOF
+ESI-ITTOF,9,Q-TOF / TOF
+LC-Orbitrap MSLC-Orbitrap MS,8,Orbitrap / FT
+"SYNAPT QTOF, Waters",8,Q-TOF / TOF
+Q Exactive HF,7,Orbitrap / FT
+ESI-QQ,6,Triple quad
+Hybrid Ft,5,Orbitrap / FT
+APCI-ITTOF,3,Q-TOF / TOF
+LC-ESI-HRMS-FT,3,Orbitrap / FT
+Q Exactive Focus Hybrid Quadrupole Orbitrap Mass Spectrometer (Thermo Fisher Scientific),2,Orbitrap / FT
+MALDI-QIT,2,Ion trap
+Q-Exactive,1,Orbitrap / FT
+DIRECT INFUSION NANOESI-ION TRAP,1,Orbitrap / FT
+Waters SYNAPT,1,Q-TOF / TOF
+Thermo LTQ,1,Ion trap
+LC-ESI-HRMS,1,other
+QIT-FT,1,Orbitrap / FT
+SI-BE,1,other
+FAB-BE,1,other
