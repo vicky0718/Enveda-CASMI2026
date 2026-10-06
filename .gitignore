@@ -18,3 +18,7 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Kaggle notebook build dirs
+kaggle/*/out/
+logs/
