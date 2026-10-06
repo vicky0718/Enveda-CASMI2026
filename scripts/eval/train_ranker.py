@@ -63,6 +63,10 @@ def main():
         o = P.heuristic_rank(g)
         heur[g.index[o]] = -np.arange(len(g))
     rep = mrr_of(f, oof).merge(mrr_of(f, heur).rename(columns={"mrr": "mrr_heur"}), on=["qkey", "regime", "panel"])
+    for tau in (0.6, 0.7, 0.8, 0.9):
+        hyb = oof + 100.0 * (f.direct.values >= tau) * f.direct.values
+        h = mrr_of(f, hyb).groupby(["panel", "regime"]).mrr.mean().round(4)
+        print(f"hybrid tau={tau}:", h.to_dict())
     print("train panels", panels)
     print(rep.groupby(["panel", "regime"])[["mrr", "mrr_heur"]].mean().round(4))
     rep.to_parquet(EVAL / "ranker_oof.parquet")
