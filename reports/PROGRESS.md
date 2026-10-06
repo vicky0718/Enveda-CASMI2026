@@ -29,7 +29,9 @@ Class-share weighted estimate (f1 .16, f2 .30–.45, f3 .54–.39): V7 ≈ 0.60�
 (panel A is analog-rich, so it is the optimistic end; the leaderboard is the arbiter).
 
 Oracle coverage of the generator (truth among products, C3): one-step edits from 100 analogs —
-A 58 %, C 43 %; two-step — A 63 %, C 49 % at ~6–10× more products (being evaluated).
+A 58 %, C 43 %; two-step — A 63 %, C 49 % at ~6–10× more products. **Rejected after ranking**:
+two-step (top-30 analogs) gives A C3 0.423 / C C3 0.217 (vs 0.437 / 0.231) and 13× the runtime —
+the extra coverage is outweighed by dilution.
 
 ## Running
 
