@@ -19,7 +19,8 @@ import pandas as pd
 
 from casmi import library as L
 from casmi.paths import ROOT
-from casmi.search import Library, Pool, Query, analog_hits, tanimoto
+from casmi import pipeline as P
+from casmi.search import Library, Pool, Query, analog_hits
 
 ART = ROOT / "data" / "artifacts"
 EVAL = ART / "eval"
@@ -91,43 +92,31 @@ def mrr(ranked_keys, truth):
     return 0.0
 
 
-def score(p_exp=3.0, q_exp=1.0):
+def score():
     pool, lib = load()
     qs = pd.read_parquet(EVAL / "queries.parquet")
     H = pd.read_parquet(EVAL / "hits.parquet")
     H["ref_lib"] = lib.L["lib_code"][H.ref.values]
     src_of = qs.drop_duplicates("key").set_index("key").src_lib
-    res = []
+    res, feats = [], []
     for key, h in H.groupby("qkey", sort=False):
         g = qs[qs.key == key]
-        M = query_of(lib, g.lrow.values, key).neutral_mass
-        cand = pool.window(M)
-        ckeys = pool.key[cand]
+        q = query_of(lib, g.lrow.values, key)
+        cand = pool.window(q.neutral_mass)
         for regime in ("C1", "C2"):
             same = h.key.values == key
             excl = same if regime == "C2" else same & (h.ref_lib.values == src_of[key])
-            hh = h[~excl & (h.pool_row.values >= 0)]
-            direct = hh[np.abs(hh.delta.values) < 0.01]
-            dscore = direct.groupby("key").sim.max()
-            # analog propagation: max over hits of sim^p * T^q, then mean over the molecule's spectra
-            top = hh.sort_values("sim", ascending=False).groupby("spec").head(50)
-            T = tanimoto(pool.ecfp4[cand], pool.ecfp4[top.pool_row.values])
-            contrib = (top.sim.values[None, :] ** p_exp) * (T ** q_exp)
-            spec = top.spec.values
-            per_spec = np.stack([contrib[:, spec == s].max(1) for s in np.unique(spec)], 1) \
-                if len(top) else np.zeros((len(cand), 1))
-            ascore = per_spec.mean(1)
-            d = dscore.reindex(ckeys).fillna(0).values
-            # direct library match dominates when strong; analog score otherwise
-            final = np.where(d > 0.5, 1.0 + d, ascore)
-            order = np.argsort(-final, kind="stable")
-            ranked = list(dict.fromkeys(ckeys[order]))
-            res.append({"key": key, "panel": g.panel.iloc[0], "regime": regime, "n_cand": len(set(ckeys)),
-                        "in_pool": key in set(ckeys),
-                        "mrr": mrr(ranked, key),
-                        "mrr_analog": mrr(list(dict.fromkeys(ckeys[np.argsort(-ascore, kind="stable")])), key)})
+            f = P.channel_scores(q, pool, lib, h[~excl], cand)
+            f["label"] = (f.key.values == key).astype(np.int8)
+            f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
+            feats.append(f)
+            ranked = list(dict.fromkeys(f.key.values[P.heuristic_rank(f)]))
+            ranked_a = list(dict.fromkeys(f.key.values[np.argsort(-f.analog.values, kind="stable")]))
+            res.append({"key": key, "panel": g.panel.iloc[0], "regime": regime, "n_cand": f.key.nunique(),
+                        "in_pool": bool(f.label.any()), "mrr": mrr(ranked, key), "mrr_analog": mrr(ranked_a, key)})
     r = pd.DataFrame(res)
     r.to_parquet(EVAL / "scores.parquet")
+    pd.concat(feats, ignore_index=True).to_parquet(EVAL / "features.parquet")
     print(r.groupby(["panel", "regime"])[["mrr", "mrr_analog", "in_pool", "n_cand"]].mean().round(4))
 
 

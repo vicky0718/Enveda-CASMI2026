@@ -4,10 +4,13 @@ Kaggle GPU script. Inputs:
   * competition data (train.parquet)
   * our private dataset vigneshnehru/casmi26-fp-train:
       fpmodel.py       — model + peak preparation (our code)
-      row_struct.npy   — int32 per train row: structure index (>= 0), -1 = excluded
+      row_struct.npy   — int32 per train row: pool row of its structure (>= 0), -1 = excluded
                          (conflicting duplicate), -2 = held-out validation structure
-      fp_targets.npy   — uint8 packed fingerprint bits per structure (informative-bit subset)
+      fp_targets.npy   — uint8 packed fingerprint bits per pool row (informative-bit subset)
+      decoys.npy       — int32 (pool, 31): same ±10 ppm window pool rows, -1 padded
       nbits.txt
+Loss = mean-bit BCE + LAMBDA * cross-entropy of softmax(f·z) over {truth} ∪ decoys (f·z is the
+Bayes log-likelihood of a candidate fingerprint up to a candidate-independent constant).
 Output (/kaggle/working): fpnet.pt ({model, nbits, d, layers}; tensors only), train_log.csv
 """
 
@@ -35,6 +38,7 @@ import fpmodel as M  # noqa: E402
 
 D, LAYERS, NP = (64, 1, M.MAX_PEAKS) if SMOKE else (512, 6, M.MAX_PEAKS)
 BS, LR, WD, WARM = (64, 4e-4, 0.01, 10) if SMOKE else (512, 4e-4, 0.01, 2000)
+LAMBDA = float(os.environ.get("FP_LAMBDA", 0.01))
 ENVEDA_POS_SHIFT = -0.0004
 OUT = os.environ.get("FP_OUT", "/kaggle/working")
 print("dataset", DS, "train", TRAIN, "gpus", torch.cuda.device_count(), flush=True)
@@ -100,6 +104,7 @@ def main():
     gMZ, gIT, gNPK, gPREC = g(MZ), g(IT), g(NPK, np.int64), g(PREC)
     gAD, gINS, gCE, gMODE = g(AD, np.int64), g(INS, np.int64), g(CE), g(MODE)
     gLAB, gFP = g(np.maximum(LAB, 0), np.int64), g(fps)
+    gDEC = g(np.load(os.path.join(DS, "decoys.npy")), np.int64)
     del MZ, IT
     shifts = torch.arange(7, -1, -1, device=dev, dtype=torch.uint8)
 
@@ -113,8 +118,15 @@ def main():
             pad = pad | drop
             it = (it * torch.exp(0.1 * torch.randn_like(it))).clamp(0, 1.5)
         it = it.masked_fill(pad, 0)
-        y = ((gFP[gLAB[idx]][:, :, None] >> shifts) & 1).reshape(len(idx), -1)[:, :nbits].float()
-        return (mz, it, pad, gPREC[idx], gAD[idx], gINS[idx], gCE[idx], gMODE[idx]), y
+        lab = gLAB[idx]
+        cand = torch.cat([lab[:, None], gDEC[lab]], 1)  # (B, 32): truth first
+        yc = ((gFP[cand.clamp(min=0)][..., None] >> shifts) & 1).reshape(len(idx), cand.shape[1], -1)[..., :nbits]
+        return (mz, it, pad, gPREC[idx], gAD[idx], gINS[idx], gCE[idx], gMODE[idx]), yc[:, 0].float(), (yc, cand >= 0)
+
+    def contrastive(z, yc, valid):
+        s = torch.einsum("bkn,bn->bk", yc.float(), z.float()).masked_fill(~valid, float("-inf"))
+        return F.cross_entropy(s, torch.zeros(len(s), dtype=torch.long, device=s.device)), \
+            (s.argmax(1) == 0).float().mean(), valid.sum(1).float().mean()
 
     net = M.FPNet(nbits, d=D, layers=LAYERS).to(dev)
     model = nn.DataParallel(net) if torch.cuda.device_count() > 1 else net
@@ -124,7 +136,7 @@ def main():
     total, step, ep = None, 0, 0
     t_train = time.time()
     log = open(os.path.join(OUT, "train_log.csv"), "w")
-    log.write("epoch,step,train_loss,mon_loss,lr,elapsed_s\n")
+    log.write("epoch,step,train_bce,train_ce,mon_bce,mon_top1_in_window,mon_cands,lr,elapsed_s\n")
 
     def lr_at(s):
         if s < WARM:
@@ -139,22 +151,26 @@ def main():
 
     while True:
         perm = rng.permutation(tr)
-        run = 0.0
+        run = run_ce = 0.0
         model.train()
         for b in range(steps_per_epoch):
-            x, y = batch(perm[b * BS:(b + 1) * BS], True)
+            x, y, (yc, valid) = batch(perm[b * BS:(b + 1) * BS], True)
             for gp in opt.param_groups:
                 gp["lr"] = lr_at(step)
             with torch.autocast("cuda", dtype=torch.float16, enabled=not SMOKE):
                 z = model(*x)
-            loss = F.binary_cross_entropy_with_logits(z.float(), y)
+            bce = F.binary_cross_entropy_with_logits(z.float(), y)
+            ce, _, _ = contrastive(z, yc, valid)
+            loss = bce + LAMBDA * ce
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
             nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             scaler.step(opt)
             scaler.update()
-            run += loss.item() if b % 50 == 0 else 0.0
+            if b % 50 == 0:
+                run += bce.item()
+                run_ce += ce.item()
             step += 1
             if total is None and step == (20 if SMOKE else 400):
                 rate = step / (time.time() - t_train)
@@ -166,13 +182,19 @@ def main():
                 break
         ep += 1
         model.eval()
-        ml = 0.0
+        ml = acc = ncand = 0.0
         with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16, enabled=not SMOKE):
-            for b in range(0, len(mon), 2048):
-                x, y = batch(mon[b:b + 2048], False)
-                ml += F.binary_cross_entropy_with_logits(model(*x).float(), y, reduction="sum").item()
+            for b in range(0, len(mon), 1024):
+                x, y, (yc, valid) = batch(mon[b:b + 1024], False)
+                z = model(*x).float()
+                ml += F.binary_cross_entropy_with_logits(z, y, reduction="sum").item()
+                _, a, nc = contrastive(z, yc, valid)
+                acc += a.item() * len(y)
+                ncand += nc.item() * len(y)
         ml /= len(mon) * nbits
-        msg = f"{ep},{step},{run / max(1, steps_per_epoch // 50):.5f},{ml:.5f},{lr_at(step):.2e},{time.time() - T_START:.0f}"
+        nb = max(1, steps_per_epoch // 50)
+        msg = (f"{ep},{step},{run / nb:.5f},{run_ce / nb:.4f},{ml:.5f},{acc / len(mon):.4f},{ncand / len(mon):.1f},"
+               f"{lr_at(step):.2e},{time.time() - T_START:.0f}")
         print(msg, flush=True)
         log.write(msg + "\n")
         log.flush()
