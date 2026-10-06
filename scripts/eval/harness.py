@@ -49,6 +49,16 @@ def build_queries(lib: Library, seed=0):
         df["panel"] = panel
         df["src_lib"] = libs.index(src)
         out.append(df)
+    # panel C: public-library NPs; one source library per structure (the one with most high-res spectra)
+    keys = set(hold.key[hold.panel == "C"])
+    rows = np.flatnonzero(np.isin(lib.key, list(keys)) & np.isin(lib.L["instr"], [1, 2]))
+    df = pd.DataFrame({"lrow": rows, "key": lib.key[rows], "src_lib": lc[rows]})
+    best = df.groupby(["key", "src_lib"]).size().reset_index(name="n").sort_values(["key", "n"], ascending=[True, False])
+    best = best.drop_duplicates("key")[["key", "src_lib"]]
+    df = df.merge(best, on=["key", "src_lib"])
+    df = df.sample(frac=1.0, random_state=int(rng.integers(1 << 30))).groupby("key").head(3)
+    df["panel"] = "C"
+    out.append(df[["lrow", "key", "panel", "src_lib"]])
     return pd.concat(out, ignore_index=True)
 
 
@@ -70,11 +80,15 @@ def query_of(lib: Library, rows, key):
 def hits():
     pool, lib = load()
     qs = build_queries(lib)
+    old = pd.read_parquet(EVAL / "queries.parquet") if (EVAL / "queries.parquet").exists() else None
+    if old is not None:  # keep earlier panels' sampled spectra (the cached hits refer to them)
+        qs = pd.concat([old, qs[~qs.key.isin(set(old.key))]], ignore_index=True)
     qs.to_parquet(EVAL / "queries.parquet")
     print(qs.groupby("panel").agg(spectra=("lrow", "size"), molecules=("key", "nunique")), flush=True)
     t0 = time.time()
-    parts = []
-    for i, (key, g) in enumerate(qs.groupby("key", sort=False)):
+    parts = [pd.read_parquet(EVAL / "hits.parquet")] if (EVAL / "hits.parquet").exists() else []
+    done = set(parts[0].qkey) if parts else set()
+    for i, (key, g) in enumerate(qs[~qs.key.isin(done)].groupby("key", sort=False)):
         q = query_of(lib, g.lrow.values, key)
         h = analog_hits(q, lib, top=600)
         h["qkey"] = key
