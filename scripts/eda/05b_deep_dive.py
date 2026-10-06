@@ -336,7 +336,8 @@ def cross_instrument(m: pd.DataFrame, stats: dict):
     if len(pairs) > 60000:
         pairs = pairs.sample(60000, random_state=0)
     peaks = read_rows(np.concatenate([pairs.index_q.unique(), pairs.index_r.unique()]))
-    cq = {i: _clean(*peaks[i], p) for i, p in zip(q.index, q.precursor_mz)}
+    qs = q.loc[pairs.index_q.unique()]
+    cq = {i: _clean(*peaks[i], p) for i, p in zip(qs.index, qs.precursor_mz)}
     cr = {i: _clean(*peaks[i], p) for i, p in zip(pairs.index_r, pairs.precursor_mz_r)}
     out = []
     for r in pairs.itertuples():

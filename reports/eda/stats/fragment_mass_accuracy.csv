@@ -1,0 +1,17 @@
+lib,mode,n_peaks,median_err_mDa,robust_sd_mDa,median_err_ppm
+enveda-180,negative,4087,0.02,0.582,0.125
+enveda-180,positive,18064,0.41,0.533,2.872
+enveda-np-examples,negative,4245,-0.015,1.028,-0.086
+enveda-np-examples,positive,16512,0.402,0.723,2.366
+gnps,negative,1478,-0.18,0.787,-0.996
+gnps,positive,10716,-0.002,0.483,-0.01
+massbank,negative,1716,-0.022,0.645,-0.139
+massbank,positive,6695,0.009,0.529,0.051
+mona,negative,2771,-0.386,1.581,-1.534
+mona,positive,15089,0.023,0.769,0.18
+msdial,negative,4002,-0.183,3.777,-0.686
+msdial,positive,11585,-0.056,1.972,-0.236
+pluskal_ms2,negative,1754,-0.437,0.447,-3.192
+pluskal_ms2,positive,5393,-0.09,0.224,-0.727
+riken,negative,982,-0.393,1.526,-2.241
+riken,positive,7819,-0.01,1.1,-0.04
