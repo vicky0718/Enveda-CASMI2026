@@ -9,6 +9,7 @@ Step 2: channel scores per candidate and MRR@25.
 
     PYTHONPATH=src python scripts/eval/harness.py hits      # step 1 (slow, cached)
     PYTHONPATH=src python scripts/eval/harness.py frag      # step 1b: fragmentation feature (cached)
+    PYTHONPATH=src python scripts/eval/harness.py fp <dir>  # step 1c: FP-model logits (our fpnet*.pt)
     PYTHONPATH=src python scripts/eval/harness.py score     # step 2
 """
 
@@ -130,6 +131,31 @@ def frag():
     pd.concat(parts, ignore_index=True).to_parquet(EVAL / "frag.parquet")
 
 
+def fp(model_dir):
+    """FP-model logits per validation molecule (two views, as in the pipeline) -> eval/fpz.npz.
+    model_dir holds our fpnet*.pt; it must be a run that held out every panel scored here."""
+    from casmi.io import read_rows
+    pool, lib = load()
+    qs = pd.read_parquet(EVAL / "queries.parquet")
+    fpm = P.load_fp_models(model_dir, device="cpu")
+    fpm["bits"] = np.load(ART / "pool" / "fp_bits.npy")
+    trows = lib.L["row"][qs.lrow.values]
+    raw = read_rows(trows)
+    libs = list(lib.L["libs"])
+    out = {}
+    t0 = time.time()
+    for i, (key, g) in enumerate(qs.groupby("key", sort=False)):
+        q = query_of(lib, g.lrow.values, key)
+        for lr in g.lrow.values:
+            mz, it = raw[int(lib.L["row"][lr])]
+            enveda = libs[lib.L["lib_code"][lr]].startswith("enveda") and lib.L["mode"][lr] > 0
+            q.raw.append((mz + (L.ENVEDA_POS_SHIFT if enveda else 0.0), it))
+        out[key] = P.fp_logits(q, fpm).astype(np.float32)
+        if i % 200 == 0:
+            print(f"  fp {i} {time.time() - t0:.0f}s", flush=True)
+    np.savez(EVAL / "fpz.npz", keys=np.array(list(out)), z=np.stack(list(out.values())))
+
+
 def mrr(ranked_keys, truth):
     for i, k in enumerate(ranked_keys[:25]):
         if k == truth:
@@ -145,6 +171,9 @@ def score():
     src_of = qs.drop_duplicates("key").set_index("key").src_lib
     FR = pd.read_parquet(EVAL / "frag.parquet") if (EVAL / "frag.parquet").exists() else None
     fr_of = {k: g.set_index("pool_row").frag for k, g in FR.groupby("qkey")} if FR is not None else {}
+    Z = np.load(EVAL / "fpz.npz") if (EVAL / "fpz.npz").exists() else None
+    z_of = dict(zip(Z["keys"], Z["z"])) if Z is not None else {}
+    bits = np.load(ART / "pool" / "fp_bits.npy")
     res, feats = [], []
     for key, h in H.groupby("qkey", sort=False):
         g = qs[qs.key == key]
@@ -154,7 +183,7 @@ def score():
             same = h.key.values == key
             excl = same if regime == "C2" else same & (h.ref_lib.values == src_of[key])
             fr = fr_of[key].reindex(cand).fillna(0).values if key in fr_of else None
-            f = P.channel_scores(q, pool, lib, h[~excl], cand, frag=fr)
+            f = P.channel_scores(q, pool, lib, h[~excl], cand, frag=fr, z=z_of.get(key), bits=bits)
             f["label"] = (f.key.values == key).astype(np.int8)
             f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
             feats.append(f)
@@ -169,4 +198,4 @@ def score():
 
 
 if __name__ == "__main__":
-    {"hits": hits, "frag": frag, "score": score}[sys.argv[1]]()
+    {"hits": hits, "frag": frag, "score": score, "fp": fp}[sys.argv[1]](*sys.argv[2:])

@@ -31,8 +31,8 @@ def load_fp_models(art, device=None):
         net = M.FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]))
         net.load_state_dict({k: v.float() for k, v in ck["model"].items()})
         nets.append(net.to(device).eval())
-    bits = f"{art}/fp_bits.npy" if os.path.exists(f"{art}/fp_bits.npy") else f"{art}/pool/fp_bits.npy"
-    return {"nets": nets, "bits": np.load(bits), "device": device}
+    bits = next((b for b in (f"{art}/fp_bits.npy", f"{art}/pool/fp_bits.npy") if os.path.exists(b)), None)
+    return {"nets": nets, "bits": None if bits is None else np.load(bits), "device": device}
 
 
 def fp_logits(q: Query, fpm):
