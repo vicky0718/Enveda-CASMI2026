@@ -19,6 +19,8 @@ from casmi.paths import INTERIM, ROOT
 RDLogger.DisableLog("rdApp.*")
 EVAL = ROOT / "data" / "artifacts" / "eval"
 K = int(sys.argv[1]) if len(sys.argv) > 1 else 20
+TWO = "--two" in sys.argv
+SMALL = ["+CH2", "-CH2", "+O", "-O", "+H2", "-H2", "+O-H2", "-O+H2", "+H2O", "-H2O"]
 
 
 def ik14(s):
@@ -30,13 +32,23 @@ def job(args):
     key, truth_ik, M, refs = args
     prods = set()
     used = 0
+    from casmi.edits import EDITS
     for smi, mass in refs:
         names = edits_for_delta(M - mass)
-        if not names:
-            continue
-        used += 1
-        for n in names:
-            prods.update(apply_edit(smi, n))
+        if names:
+            used += 1
+            for n in names:
+                prods.update(apply_edit(smi, n))
+        elif TWO:
+            for a in SMALL:  # first a small edit, then any edit that closes the remaining gap
+                rest = edits_for_delta(M - mass - EDITS[a][0])
+                if not rest:
+                    continue
+                used += 1
+                mids = apply_edit(smi, a)[:30]
+                for mid in mids:
+                    for n in rest:
+                        prods.update(apply_edit(mid, n)[:30])
     iks = {ik14(p) for p in prods}
     return {"key": key, "refs_with_edit": used, "n_products": len(prods), "covered": truth_ik in iks}
 

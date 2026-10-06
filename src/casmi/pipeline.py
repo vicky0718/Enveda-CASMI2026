@@ -13,6 +13,8 @@ from .search import ECFP4_BYTES, Library, Pool, Query, analog_hits, make_query, 
 P_EXP, Q_EXP, TOP_PER_SPEC = 3.0, 1.0, 50
 FULL_BITS = 4096 + 4096 + 2048 + 167
 GEN_K_REFS = int(os.environ.get("CASMI_GEN_K", 100))  # analog structures used as edit sources
+GEN_TWO_K = int(os.environ.get("CASMI_GEN_TWO_K", 0))  # top analogs also tried with two-step edits (0 = off)
+SMALL_EDITS = ["+CH2", "-CH2", "+O", "-O", "+H2", "-H2", "+O-H2", "-O+H2", "+H2O", "-H2O"]
 
 
 def load_fp_models(art, device=None):
@@ -79,20 +81,36 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
     from rdkit import Chem
     from rdkit.Chem.Descriptors import ExactMolWt
 
-    from .edits import apply_edit, edits_for_delta
+    from .edits import EDITS, apply_edit, edits_for_delta
     from .fp import full_fp
     M = q.neutral_mass
     k_refs = k_refs or GEN_K_REFS
     h = hits[hits.pool_row.values >= 0].sort_values("sim", ascending=False).drop_duplicates("key").head(k_refs)
     prods = {}
-    for r, sim in zip(h.pool_row.values, h.sim.values):
-        for n in edits_for_delta(M - pool.mass[r], tol=max(0.005, M * ppm * 1e-6)):
+    tol = max(0.005, M * ppm * 1e-6)
+
+    def put(p, sim, steps):
+        g = prods.setdefault(p, [0.0, 0, steps])
+        g[0] = max(g[0], float(sim))
+        g[1] += 1
+        g[2] = min(g[2], steps)
+
+    for i, (r, sim) in enumerate(zip(h.pool_row.values, h.sim.values)):
+        names = edits_for_delta(M - pool.mass[r], tol=tol)
+        for n in names:
             for p in apply_edit(pool.df.smiles.values[r], n):
-                g = prods.setdefault(p, [0.0, 0])
-                g[0] = max(g[0], float(sim))
-                g[1] += 1
+                put(p, sim, 1)
+        if not names and i < GEN_TWO_K:  # a small edit, then any edit closing the remaining gap
+            for a in SMALL_EDITS:
+                rest = edits_for_delta(M - pool.mass[r] - EDITS[a][0], tol=tol)
+                if not rest:
+                    continue
+                for mid in apply_edit(pool.df.smiles.values[r], a)[:30]:
+                    for n in rest:
+                        for p in apply_edit(mid, n)[:30]:
+                            put(p, sim, 2)
     rows, seen = [], set(cand_keys)
-    for smi, (sim, nsrc) in prods.items():
+    for smi, (sim, nsrc, steps) in prods.items():
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
             continue
@@ -104,8 +122,8 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
         if f is None:
             continue
         seen.add(key)
-        rows.append((smi, key, mass, f, sim, nsrc))
-    return pd.DataFrame(rows, columns=["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc"])
+        rows.append((smi, key, mass, f, sim, nsrc, steps))
+    return pd.DataFrame(rows, columns=["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc", "gen_steps"])
 
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
@@ -147,7 +165,8 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
                       "t_wmean": t_wmean, "mass_err_ppm": (cmass - q.neutral_mass) / q.neutral_mass * 1e6,
                       "is_gen": np.r_[np.zeros(len(cand)), np.ones(ng)],
                       "gen_sim": np.r_[np.zeros(len(cand)), gen.gen_sim.values if ng else []],
-                      "gen_nsrc": np.r_[np.zeros(len(cand)), gen.gen_nsrc.values if ng else []]})
+                      "gen_nsrc": np.r_[np.zeros(len(cand)), gen.gen_nsrc.values if ng else []],
+                      "gen_steps": np.r_[np.zeros(len(cand)), gen.gen_steps.values if ng else []]})
     f["smiles"] = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng \
         else pool.df.smiles.values[cand]
     if z is not None and n:
