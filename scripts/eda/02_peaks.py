@@ -142,7 +142,7 @@ def main():
     ax.set_yticks(y, libs)
     ax.grid(axis="y", visible=False)
     ax.set_xlabel("Median peaks per spectrum (log)")
-    ax.legend(loc="lower right")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=3)
     ax.set_title("Most peaks in timsTOF spectra are low-intensity: median peak count at relative-intensity floors")
     save(fig, "09_peaks_vs_intensity_floor")
 
@@ -161,7 +161,7 @@ def main():
 
     # ---------- histograms ----------
     def H(group, name):
-        r = hist[(hist.group == group) & (hist.hist == name)]
+        r = hist[(hist["group"] == group) & (hist["hist"] == name)]
         return r.counts.iloc[0] if len(r) else None
 
     def ctr(bins):
@@ -229,7 +229,7 @@ def main():
         STATS / "top_neutral_losses_np_examples.csv", index=False)
 
     # ---------- F13: entropy & quality vs instrument ----------
-    fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.2), gridspec_kw={"wspace": 0.3})
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.2), gridspec_kw={"wspace": 0.25})
     bins = np.linspace(0, 6, 61)
     for grp in context + focus:
         s = allf.entropy[allf.ingest_lib == grp]
@@ -239,18 +239,24 @@ def main():
     axes[0].set_ylabel("Density")
     axes[0].set_title("Spectral entropy")
     axes[0].legend(fontsize=7.5)
-    e180 = tr[tr.ingest_lib == "enveda-180"]
-    ce = e180.ce_mean.round()
-    for i, (cev, c) in enumerate(zip(sorted(ce.dropna().unique()), [SERIES[0], SERIES[1], SERIES[2]])):
-        s = e180.base_peak_rel_mz[ce == cev]
-        axes[1].hist(s, bins=np.linspace(0, 1.05, 64), density=True, histtype="step", color=c, linewidth=2, label=f"{cev:.0f} eV")
+    # [M+H]+ only: dimer adducts ([2M+Na]+ etc., 29% of enveda-180) put the base peak at precursor/2.
+    e180 = tr[(tr.ingest_lib == "enveda-180") & (tr.adduct == "[M+H]+")]
+    meta_ce = m.loc[e180.index, ["ce_n", "ce_min", "ce_max"]]
+    ce_cls = np.select([(meta_ce.ce_n == 1) & (meta_ce.ce_min == v) for v in (20, 40, 60)] + [meta_ce.ce_n == 3],
+                       ["20 eV", "40 eV", "60 eV", "merged 20/40/60 eV"], default="other")
+    for cls, c in zip(["20 eV", "40 eV", "60 eV", "merged 20/40/60 eV"], SERIES[:4]):
+        s_ = e180.base_peak_rel_mz[ce_cls == cls]
+        axes[1].hist(s_, bins=np.linspace(0, 1.05, 64), density=True, histtype="step", color=c, linewidth=2,
+                     label=f"{cls} (n={len(s_):,})")
     axes[1].set_xlabel("Base peak m/z ÷ precursor m/z")
     axes[1].set_ylabel("Density")
-    axes[1].set_title("enveda-180: higher collision energy moves the base peak to smaller fragments")
-    axes[1].legend()
+    axes[1].set_title("enveda-180 [M+H]+: higher energy shifts the base peak to smaller fragments")
+    axes[1].legend(loc="upper left")
+    ce = pd.Series(ce_cls, index=e180.index)
+    stats["enveda180_MH_base_peak_rel_mz_by_ce"] = e180.groupby(ce).base_peak_rel_mz.median().round(3).to_dict()
+    stats["enveda180_MH_prec_present_by_ce"] = e180.groupby(ce).prec_present.mean().round(3).to_dict()
+    stats["enveda180_MH_entropy_by_ce"] = e180.groupby(ce).entropy.median().round(3).to_dict()
     save(fig, "13_entropy_and_ce_effect")
-    stats["enveda180_base_peak_rel_mz_by_ce"] = e180.groupby(ce).base_peak_rel_mz.median().round(3).to_dict()
-    stats["enveda180_prec_present_by_ce"] = e180.groupby(ce).prec_present.mean().round(3).to_dict()
 
     (STATS / "02_peaks.json").write_text(json.dumps(stats, indent=2, default=str))
     print(summ.round(3).to_string())
