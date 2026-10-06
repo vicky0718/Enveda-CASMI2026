@@ -1,5 +1,6 @@
-"""Spectrum -> fingerprint transformer (architecture reimplemented from the public, CC0
-prvsiyan "Analog Propagation" notebook so that its released weights can be loaded; reviewed).
+"""Spectrum -> fingerprint transformer (architecture as described in the public, CC0 prvsiyan
+"Analog Propagation" notebook; trained by us from scratch on the competition data, see
+kaggle/fp_train/).
 
 Candidates are ranked by f·z (the Bayes log-likelihood of the fingerprint bits up to a constant).
 """
@@ -45,6 +46,9 @@ def prep_peaks(mz, inten, prec_mz, max_peaks=MAX_PEAKS, floor=1e-3, win=50.0, pe
         return np.zeros(0, np.float32), np.zeros(0, np.float32)
     keep = it >= floor * it.max()
     mz, it = mz[keep], it[keep]
+    if len(mz) > 8 * max_peaks:  # bound the per-peak Python loop below on very dense spectra
+        sel = np.argpartition(-it, 8 * max_peaks)[:8 * max_peaks]
+        mz, it = mz[sel], it[sel]
     if len(mz) > max_peaks:
         order = np.argsort(-it)
         bucket = (mz // win).astype(np.int64)
@@ -132,7 +136,7 @@ class FPNet(nn.Module):
 
 
 def load(path, device="cpu"):
-    """Load a released checkpoint with the safe tensor-only loader (no arbitrary code)."""
+    """Load one of our own checkpoints ({model, nbits, d, layers}) with the tensor-only loader."""
     ck = torch.load(path, map_location="cpu", weights_only=True)
     net = FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"])).to(device).eval()
     net.load_state_dict(ck["model"])
