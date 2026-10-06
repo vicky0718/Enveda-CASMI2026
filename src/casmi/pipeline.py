@@ -12,7 +12,7 @@ from .search import ECFP4_BYTES, Library, Pool, Query, analog_hits, make_query, 
 
 P_EXP, Q_EXP, TOP_PER_SPEC = 3.0, 1.0, 50
 FULL_BITS = 4096 + 4096 + 2048 + 167
-GEN_K_REFS = int(os.environ.get("CASMI_GEN_K", 20))  # analog structures used as edit sources
+GEN_K_REFS = int(os.environ.get("CASMI_GEN_K", 100))  # analog structures used as edit sources
 
 
 def load_fp_models(art, device=None):

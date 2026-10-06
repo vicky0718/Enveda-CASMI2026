@@ -36,7 +36,7 @@ print(len(test), "spectra", test.molecule_id.nunique(), "molecules", f"{time.tim
     r'''ranker = P.load_ranker(ART)
 fpm = P.load_fp_models(ART)
 print("artifact files:", sorted(os.listdir(ART)))
-print("ranker:", "loaded" if ranker is not None else "NONE (heuristic)",
+print("gen K:", getattr(P, "GEN_K_REFS", None), "| ranker:", "loaded" if ranker is not None else "NONE (heuristic)",
       "| fp models:", 0 if fpm is None else len(fpm["nets"]))
 rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=True)
 print(f"ranked {len(rows)} molecules, {time.time() - T0:.0f}s")''',
