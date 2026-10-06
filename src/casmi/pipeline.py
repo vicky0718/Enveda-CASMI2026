@@ -89,10 +89,19 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         per = np.stack([contrib[:, spec == s].max(1) for s in np.unique(spec)], 1)
         a_mean, a_max = per.mean(1), per.max(1)
         tmax = T.max(1)
+        # same instrument as the test (timsTOF) references only; and the best few analogs' consensus
+        tims = lib.L["instr"][top.ref.values] == 0
+        a_tims = np.stack([np.where(tims[spec == s], contrib[:, spec == s], 0).max(1) for s in np.unique(spec)],
+                          1).mean(1)
+        k = min(5, contrib.shape[1])
+        a_top5 = np.sort(contrib, 1)[:, -k:].mean(1)
+        sw = top.sim.values ** p_exp
+        t_wmean = (T * sw[None, :]).sum(1) / max(sw.sum(), 1e-9)
     else:
-        a_mean = a_max = tmax = np.zeros(len(cand))
+        a_mean = a_max = tmax = a_tims = a_top5 = t_wmean = np.zeros(len(cand))
     f = pd.DataFrame({"pool_row": cand, "key": ckeys, "direct": d, "direct_n": dn, "analog": a_mean,
-                      "analog_max": a_max, "tmax": tmax,
+                      "analog_max": a_max, "tmax": tmax, "analog_tims": a_tims, "analog_top5": a_top5,
+                      "t_wmean": t_wmean,
                       "mass_err_ppm": (pool.mass[cand] - q.neutral_mass) / q.neutral_mass * 1e6})
     if z is not None:
         fz = fp_scores(pool, cand, z, bits)
@@ -103,7 +112,7 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
     return add_relative(f)
 
 
-REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag"]
+REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean"]
 
 
 def add_relative(f: pd.DataFrame) -> pd.DataFrame:

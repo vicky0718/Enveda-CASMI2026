@@ -3,7 +3,10 @@
 Folds are held out by molecule (query key), never by row. Reports out-of-fold MRR@25 per
 panel × regime vs the heuristic, then fits on everything and writes the submission rankers.
 
-    PYTHONPATH=src python scripts/eval/train_ranker.py [--regimes C1,C2] [--save]
+    PYTHONPATH=src python scripts/eval/train_ranker.py [--regimes=C1,C2] [--train-panels=A,C] [--save]
+
+Out-of-fold scores are reported for every panel, but models are fit only on --train-panels
+(B, the synthetic-like enveda-180 panel, teaches library-provenance shortcuts; see harness notes).
 """
 
 import json
@@ -18,7 +21,8 @@ from casmi.paths import ROOT
 
 ART = ROOT / "data" / "artifacts"
 EVAL = ART / "eval"
-BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_ppm", "frag"]
+BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_ppm", "frag", "analog_tims",
+              "analog_top5", "t_wmean"]
 PARAMS = dict(objective="lambdarank", metric="map", eval_at=[25], learning_rate=0.05, num_leaves=31,
               min_data_in_leaf=50, feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1,
               lambdarank_truncation_level=25, verbose=-1, seed=0, deterministic=True, num_threads=4)
@@ -38,6 +42,7 @@ def mrr_of(f, score):
 def main():
     regimes = next((a.split("=")[1].split(",") for a in sys.argv if a.startswith("--regimes=")), ["C1", "C2"])
     f = pd.read_parquet(EVAL / "features.parquet")
+    panels = next((a.split("=")[1].split(",") for a in sys.argv if a.startswith("--train-panels=")), ["A", "C"])
     f = f[f.regime.isin(regimes)].reset_index(drop=True)
     feats = [c for c in BASE_FEATS + ["fp", "fp_rank"] if c in f.columns]
     feats += [c for c in f.columns if c.endswith("_gap") or c.endswith("_rk")] + ["n_cand"]
@@ -48,7 +53,7 @@ def main():
     f["fold"] = f.qkey.map(fold_of)
     oof = np.zeros(len(f))
     for k in range(5):
-        tr, va = f[f.fold != k], f[f.fold == k]
+        tr, va = f[(f.fold != k) & f.panel.isin(panels)], f[f.fold == k]
         tr = tr[tr.groupby("grp").label.transform("max") > 0]  # queries whose answer is in the pool
         ds = lgb.Dataset(tr[feats].astype(np.float32), tr.label, group=tr.groupby("grp", sort=False).size().values)
         b = lgb.train(PARAMS, ds, ROUNDS)
@@ -58,11 +63,13 @@ def main():
         o = P.heuristic_rank(g)
         heur[g.index[o]] = -np.arange(len(g))
     rep = mrr_of(f, oof).merge(mrr_of(f, heur).rename(columns={"mrr": "mrr_heur"}), on=["qkey", "regime", "panel"])
+    print("train panels", panels)
     print(rep.groupby(["panel", "regime"])[["mrr", "mrr_heur"]].mean().round(4))
+    rep.to_parquet(EVAL / "ranker_oof.parquet")
     if "--save" in sys.argv:
         out = ART / "submit"
         out.mkdir(exist_ok=True)
-        tr = f[f.groupby("grp").label.transform("max") > 0]
+        tr = f[(f.groupby("grp").label.transform("max") > 0) & f.panel.isin(panels)]
         for seed in range(3):
             ds = lgb.Dataset(tr[feats].astype(np.float32), tr.label, group=tr.groupby("grp", sort=False).size().values)
             lgb.train({**PARAMS, "seed": seed}, ds, ROUNDS).save_model(str(out / f"ranker{seed}.txt"))
