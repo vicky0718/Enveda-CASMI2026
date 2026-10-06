@@ -12,6 +12,7 @@ from .search import ECFP4_BYTES, Library, Pool, Query, analog_hits, make_query, 
 
 P_EXP, Q_EXP, TOP_PER_SPEC = 3.0, 1.0, 50
 FULL_BITS = 4096 + 4096 + 2048 + 167
+GEN_K_REFS = int(os.environ.get("CASMI_GEN_K", 20))  # analog structures used as edit sources
 
 
 def load_fp_models(art, device=None):
@@ -71,7 +72,7 @@ def queries_from_test(test: pd.DataFrame):
     return out
 
 
-def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=20, ppm=10.0):
+def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None, ppm=10.0):
     """Class-3 candidates: one-step biosynthetic edits of the top-k analog reference structures whose
     mass differs from the unknown by a known transformation. Returns DataFrame(smiles, key, mass, fp,
     gen_sim, gen_nsrc) without structures already among the pool candidates."""
@@ -81,6 +82,7 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=20, 
     from .edits import apply_edit, edits_for_delta
     from .fp import full_fp
     M = q.neutral_mass
+    k_refs = k_refs or GEN_K_REFS
     h = hits[hits.pool_row.values >= 0].sort_values("sim", ascending=False).drop_duplicates("key").head(k_refs)
     prods = {}
     for r, sim in zip(h.pool_row.values, h.sim.values):
