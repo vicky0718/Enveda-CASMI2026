@@ -2,6 +2,8 @@
 SMILES (25 per molecule, deduplicated by metric key). Used by the harness and the Kaggle notebook.
 """
 
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -28,7 +30,8 @@ def load_fp_models(art, device=None):
         net = M.FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]))
         net.load_state_dict({k: v.float() for k, v in ck["model"].items()})
         nets.append(net.to(device).eval())
-    return {"nets": nets, "bits": np.load(f"{art}/pool/fp_bits.npy"), "device": device}
+    bits = f"{art}/fp_bits.npy" if os.path.exists(f"{art}/fp_bits.npy") else f"{art}/pool/fp_bits.npy"
+    return {"nets": nets, "bits": np.load(bits), "device": device}
 
 
 def fp_logits(q: Query, fpm):
@@ -93,6 +96,19 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         fz = fp_scores(pool, cand, z, bits)
         f["fp"] = fz - fz.max()
         f["fp_rank"] = pd.Series(-fz).rank(method="min").values
+    return add_relative(f)
+
+
+REL_COLS = ["direct", "analog", "analog_max", "tmax"]
+
+
+def add_relative(f: pd.DataFrame) -> pd.DataFrame:
+    """Within-molecule relative features (gap to the best candidate, rank), shared by training and
+    inference."""
+    for c in REL_COLS:
+        f[c + "_gap"] = f[c] - f[c].max()
+        f[c + "_rk"] = f[c].rank(ascending=False, method="min")
+    f["n_cand"] = len(f)
     return f
 
 
@@ -120,7 +136,6 @@ def load_ranker(art):
 
 def load_keycache(art):
     """smiles -> metric key for pool rows whose key is known (train structures, keyed COCONUT rows)."""
-    import os
     p = f"{art}/keycache.parquet"
     if not os.path.exists(p):
         return {}

@@ -17,7 +17,9 @@ if whl:
     subprocess.run([sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "-q", *whl], check=False)
 import rdkit; print("rdkit", rdkit.__version__)
 ART = os.path.dirname(glob.glob("/kaggle/input/**/casmi26_artifacts.txt", recursive=True)[0])
-shutil.copytree(f"{ART}/code", "/kaggle/working/code", dirs_exist_ok=True)  # numba cache needs a writable dir
+os.makedirs("/kaggle/working/code/casmi", exist_ok=True)  # writable copy: numba caches next to the code
+for f in glob.glob(f"{ART}/code__*.py"):
+    shutil.copy(f, "/kaggle/working/code/casmi/" + os.path.basename(f)[len("code__"):])
 sys.path.insert(0, "/kaggle/working/code")
 COMP = os.path.dirname(glob.glob("/kaggle/input/**/test.parquet", recursive=True)[0])
 print("artifacts", ART, "competition", COMP)''',
@@ -25,7 +27,7 @@ print("artifacts", ART, "competition", COMP)''',
 from casmi import library as L
 from casmi import pipeline as P
 from casmi.search import Library, Pool
-pool = Pool(f"{ART}/pool")
+pool = Pool(ART)
 lib = Library(L.load(f"{ART}/library.npz"), pool)
 test = pd.read_parquet(f"{COMP}/test.parquet")
 print(len(test), "spectra", test.molecule_id.nunique(), "molecules", f"{time.time() - T0:.0f}s")''',
