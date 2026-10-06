@@ -35,6 +35,9 @@ test = pd.read_parquet(f"{COMP}/test.parquet")
 print(len(test), "spectra", test.molecule_id.nunique(), "molecules", f"{time.time() - T0:.0f}s")''',
     r'''ranker = P.load_ranker(ART)
 fpm = P.load_fp_models(ART)
+print("artifact files:", sorted(os.listdir(ART)))
+print("ranker:", "loaded" if ranker is not None else "NONE (heuristic)",
+      "| fp models:", 0 if fpm is None else len(fpm["nets"]))
 rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm)
 print(f"ranked {len(rows)} molecules, {time.time() - T0:.0f}s")''',
     r'''from casmi.metric import candidate_key
@@ -54,7 +57,8 @@ for mid, smiles in rows:
 sub = pd.DataFrame({"molecule_id": sub_ids,
                     "smiles": [";".join(out.get(m) or ["C"]) for m in sub_ids]})
 sub.to_csv("/kaggle/working/submission.csv", index=False)
-print(sub.shape, f"{time.time() - T0:.0f}s"); sub.head()''',
+n = sub.smiles.str.split(";").str.len()
+print(sub.shape, "candidates/molecule min/median", n.min(), n.median(), f"{time.time() - T0:.0f}s"); sub.head()''',
 ]
 
 
