@@ -66,6 +66,8 @@ def annotate(m: pd.DataFrame) -> pd.DataFrame:
         sm = sub[0]
         mz, it = peaks[i]
         keep = (mz <= r.precursor_mz + 0.5) & (it > 0)
+        if not keep.any():  # e.g. all peaks above the precursor (library quirks)
+            continue
         mz, it = mz[keep], it[keep] / it[keep].max()
         err, _ = match_peaks(mz, sm, TOL_DA)
         e_plus, _ = match_peaks(mz + DECOY_SHIFT, sm, TOL_DA)
