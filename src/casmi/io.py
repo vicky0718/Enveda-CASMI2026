@@ -106,3 +106,21 @@ def iter_peaks(path=TRAIN, columns=("precursor_mz",)) -> Iterator[PeakBatch]:
 
 def load_test() -> pd.DataFrame:
     return pd.read_parquet(TEST)
+
+
+def read_rows(rows, path=TRAIN) -> dict:
+    """{row_index: (mz, intensity)} for selected train rows, reading only the needed row groups."""
+    rows = np.sort(np.unique(np.asarray(rows)))
+    f = pq.ParquetFile(path)
+    out, start = {}, 0
+    for rg in range(f.num_row_groups):
+        n = f.metadata.row_group(rg).num_rows
+        sel = rows[(rows >= start) & (rows < start + n)] - start
+        if len(sel):
+            tbl = f.read_row_group(rg, columns=PEAK_COLS).take(sel)
+            mzs = tbl["ms2_mzs"].to_pylist()
+            its = tbl["ms2_normalized_intensities"].to_pylist()
+            for local, mz, it in zip(sel, mzs, its):
+                out[start + int(local)] = (np.asarray(mz, dtype=float), np.asarray(it, dtype=float))
+        start += n
+    return out
