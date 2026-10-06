@@ -1,0 +1,35 @@
+{
+  "candidates_per_molecule_10ppm": {
+    "count": 250.0,
+    "mean": 28.2,
+    "std": 38.9,
+    "min": 1.0,
+    "25%": 5.0,
+    "50%": 13.0,
+    "75%": 34.0,
+    "max": 227.0
+  },
+  "true_structure_in_candidate_set": 1.0,
+  "mrr25_library_search": 0.8984222222222222,
+  "mrr25_random_in_mass_window": 0.30671200504545987,
+  "top1": 0.828,
+  "top5": 0.984,
+  "top25": 0.996,
+  "share_with_reference_in_same_mode": 0.992,
+  "same_compound_cosine_median_by_family": {
+    "Ion trap": 0.0,
+    "Orbitrap / FT": 0.486,
+    "Q-TOF / TOF": 0.267,
+    "Triple quad": 0.0,
+    "other": 0.0,
+    "unknown": 0.531
+  },
+  "same_compound_best_cosine_median_by_family": {
+    "Ion trap": 0.0,
+    "Orbitrap / FT": 0.878,
+    "Q-TOF / TOF": 0.861,
+    "Triple quad": 0.02,
+    "other": 0.163,
+    "unknown": 0.806
+  }
+}

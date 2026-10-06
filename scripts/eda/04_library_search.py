@@ -141,7 +141,7 @@ def main():
     stats["same_compound_best_cosine_median_by_family"] = sc_best.groupby("ref_family").cosine.median().round(3).to_dict()
 
     # ---------- figures ----------
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.4), gridspec_kw={"wspace": 0.35})
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.6), gridspec_kw={"wspace": 0.45})
     ranks = res["rank"].replace(np.inf, 999)
     buckets = pd.cut(ranks, [0, 1, 2, 3, 5, 10, 25, 1000], labels=["1", "2", "3", "4–5", "6–10", "11–25", ">25 / miss"])
     vc = buckets.value_counts().reindex(buckets.cat.categories)
@@ -152,8 +152,8 @@ def main():
     axes[0].grid(axis="x", visible=False)
     axes[0].set_xlabel("Rank of the true structure")
     axes[0].set_ylabel("Molecules")
-    axes[0].set_title(f"Mass filter + cosine search: MRR@25 = {stats['mrr25_library_search']:.3f} "
-                      f"(random in window {stats['mrr25_random_in_mass_window']:.3f})")
+    axes[0].set_title(f"Mass filter + cosine: MRR@25 {stats['mrr25_library_search']:.3f}\n"
+                      f"(random order in the same window: {stats['mrr25_random_in_mass_window']:.3f})")
     order = sc_best.groupby("ref_family").cosine.median().sort_values(ascending=False).index.tolist()
     data = [sc_best.cosine[sc_best.ref_family == f].values for f in order]
     bp = axes[1].boxplot(data, orientation="horizontal", whis=(5, 95), showfliers=False, patch_artist=True, widths=0.6,
@@ -163,8 +163,8 @@ def main():
     axes[1].set_yticks(range(1, len(order) + 1), [f"{f} (n={len(d)})" for f, d in zip(order, data)])
     axes[1].invert_yaxis()
     axes[1].set_xlim(0, 1)
-    axes[1].set_xlabel("Best cosine: timsTOF query vs same compound + adduct in reference instrument family")
-    axes[1].set_title("Cross-instrument similarity of the same molecule")
+    axes[1].set_xlabel("Best cosine per molecule (same adduct), by reference instrument family")
+    axes[1].set_title("Same molecule, other instruments:\nbest cosine to the timsTOF query")
     save(fig, "19_library_search_baseline")
 
     fig, ax = plt.subplots(figsize=(8, 4))
