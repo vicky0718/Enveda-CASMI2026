@@ -18,7 +18,7 @@ from casmi.paths import ROOT
 
 ART = ROOT / "data" / "artifacts"
 EVAL = ART / "eval"
-BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_ppm"]
+BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_ppm", "frag"]
 PARAMS = dict(objective="lambdarank", metric="map", eval_at=[25], learning_rate=0.05, num_leaves=31,
               min_data_in_leaf=50, feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1,
               lambdarank_truncation_level=25, verbose=-1, seed=0, deterministic=True, num_threads=4)

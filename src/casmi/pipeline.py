@@ -7,6 +7,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from .frag import frag_scores
 from .search import Library, Pool, Query, analog_hits, make_query, tanimoto
 
 P_EXP, Q_EXP, TOP_PER_SPEC = 3.0, 1.0, 50
@@ -71,7 +72,8 @@ def queries_from_test(test: pd.DataFrame):
 
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
-                   p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None):
+                   p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None,
+                   frag=None):
     """Per-candidate features for one molecule. `hits` must already exclude any references the
     evaluation regime forbids. Returns DataFrame indexed like `cand`."""
     ckeys = pool.key[cand]
@@ -96,16 +98,18 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         fz = fp_scores(pool, cand, z, bits)
         f["fp"] = fz - fz.max()
         f["fp_rank"] = pd.Series(-fz).rank(method="min").values
+    if frag is not None:
+        f["frag"] = frag
     return add_relative(f)
 
 
-REL_COLS = ["direct", "analog", "analog_max", "tmax"]
+REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag"]
 
 
 def add_relative(f: pd.DataFrame) -> pd.DataFrame:
     """Within-molecule relative features (gap to the best candidate, rank), shared by training and
     inference."""
-    for c in REL_COLS:
+    for c in [c for c in REL_COLS if c in f.columns]:
         f[c + "_gap"] = f[c] - f[c].max()
         f[c + "_rk"] = f[c].rank(ascending=False, method="min")
     f["n_cand"] = len(f)
@@ -154,7 +158,9 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
                 continue
             h = analog_hits(q, lib, top=300)
             z = fp_logits(q, fp_models)
-            f = channel_scores(q, pool, lib, h, cand, z=z, bits=None if fp_models is None else fp_models["bits"])
+            fr = frag_scores(list(pool.df.smiles.values[cand]), q)
+            f = channel_scores(q, pool, lib, h, cand, z=z, bits=None if fp_models is None else fp_models["bits"],
+                               frag=fr)
             order = ranker(f) if ranker is not None else heuristic_rank(f)
             rows.append((q.mid, list(pool.df.smiles.values[cand[order]])))
         except Exception as e:  # one bad molecule must never sink the file

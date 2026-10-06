@@ -8,6 +8,7 @@ Step 1 (cached): per query spectrum, the top reference spectra by direct+shifted
 Step 2: channel scores per candidate and MRR@25.
 
     PYTHONPATH=src python scripts/eval/harness.py hits      # step 1 (slow, cached)
+    PYTHONPATH=src python scripts/eval/harness.py frag      # step 1b: fragmentation feature (cached)
     PYTHONPATH=src python scripts/eval/harness.py score     # step 2
 """
 
@@ -84,6 +85,37 @@ def hits():
     pd.concat(parts, ignore_index=True).to_parquet(EVAL / "hits.parquet")
 
 
+def _frag_job(args):
+    key, rows, cand = args
+    from casmi.frag import frag_scores
+    q = query_of(_G["lib"], rows, key)
+    return pd.DataFrame({"qkey": key, "pool_row": cand,
+                         "frag": frag_scores(list(_G["pool"].df.smiles.values[cand]), q)})
+
+
+_G = {}
+
+
+def frag():
+    """Fragmentation-explanation feature per (molecule, candidate); regime-independent, cached."""
+    from multiprocessing import Pool as MP
+    pool, lib = load()
+    _G.update(pool=pool, lib=lib)
+    qs = pd.read_parquet(EVAL / "queries.parquet")
+    jobs = []
+    for key, g in qs.groupby("key", sort=False):
+        q = query_of(lib, g.lrow.values, key)
+        jobs.append((key, g.lrow.values, pool.window(q.neutral_mass)))
+    t0 = time.time()
+    with MP(4) as mp:  # fork: workers share the loaded pool/library
+        parts = []
+        for i, r in enumerate(mp.imap_unordered(_frag_job, jobs, chunksize=4)):
+            parts.append(r)
+            if i % 100 == 0:
+                print(f"  frag {i}/{len(jobs)} {time.time() - t0:.0f}s", flush=True)
+    pd.concat(parts, ignore_index=True).to_parquet(EVAL / "frag.parquet")
+
+
 def mrr(ranked_keys, truth):
     for i, k in enumerate(ranked_keys[:25]):
         if k == truth:
@@ -97,6 +129,8 @@ def score():
     H = pd.read_parquet(EVAL / "hits.parquet")
     H["ref_lib"] = lib.L["lib_code"][H.ref.values]
     src_of = qs.drop_duplicates("key").set_index("key").src_lib
+    FR = pd.read_parquet(EVAL / "frag.parquet") if (EVAL / "frag.parquet").exists() else None
+    fr_of = {k: g.set_index("pool_row").frag for k, g in FR.groupby("qkey")} if FR is not None else {}
     res, feats = [], []
     for key, h in H.groupby("qkey", sort=False):
         g = qs[qs.key == key]
@@ -105,7 +139,8 @@ def score():
         for regime in ("C1", "C2"):
             same = h.key.values == key
             excl = same if regime == "C2" else same & (h.ref_lib.values == src_of[key])
-            f = P.channel_scores(q, pool, lib, h[~excl], cand)
+            fr = fr_of[key].reindex(cand).fillna(0).values if key in fr_of else None
+            f = P.channel_scores(q, pool, lib, h[~excl], cand, frag=fr)
             f["label"] = (f.key.values == key).astype(np.int8)
             f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
             feats.append(f)
@@ -120,4 +155,4 @@ def score():
 
 
 if __name__ == "__main__":
-    {"hits": hits, "score": score}[sys.argv[1]]()
+    {"hits": hits, "frag": frag, "score": score}[sys.argv[1]]()
