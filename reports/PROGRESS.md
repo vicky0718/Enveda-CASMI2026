@@ -54,3 +54,10 @@ decoys 0.89, but per-bit BCE only 0.267 → 0.205. On held-out panels f·z alone
 (A C2 0.215 vs random ≈ 0.12; B C2 0.387) and adding it to the ranker does not help
 (weighted A 0.604 vs 0.612 without) — the contrastive term memorised training structures instead of
 learning transferable substructure bits. Run 3 (pure BCE) launched; V7 (no FP) stays the submission.
+
+## FP model, run 2 (same loss; A/B/C all held out) — honest on every panel
+
+f·z alone: A C2 0.211, C C2 0.122 (random ≈ 0.12 / 0.05); ranker with f·z vs without:
+weighted A 0.611 vs 0.612, C 0.402 vs 0.404 — neutral. Ranker capacity (31/63/15 leaves) within ±0.004.
+Decision: V7 stays the submission; run 3 (pure BCE, all panels held out) decides whether the FP
+channel is worth shipping.
