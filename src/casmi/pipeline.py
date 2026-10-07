@@ -130,10 +130,11 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
                    p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None,
-                   frag=None, gen=None):
+                   frag=None, gen=None, excl_rows=None):
     """Per-candidate features for one molecule: pool candidates `cand` followed by generated
     candidates `gen` (from `generate`). `hits` must already exclude any references the evaluation
-    regime forbids. `frag` covers pool + generated rows in that order."""
+    regime forbids, and `excl_rows` the same library rows (for the own-spectrum features).
+    `frag` covers pool + generated rows in that order."""
     ng = 0 if gen is None else len(gen)
     ckeys = np.concatenate([pool.key[cand], gen.key.values]) if ng else pool.key[cand]
     cfp = np.concatenate([np.asarray(pool.fp[cand]), np.stack(gen.fp.values)]) if ng else np.asarray(pool.fp[cand])
@@ -157,14 +158,21 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
                           1).mean(1)
         k = min(5, contrib.shape[1])
         a_top5 = np.sort(contrib, 1)[:, -k:].mean(1)
+        # analog evidence from *other* structures only: a candidate's own library spectrum must not
+        # vouch for it (isomers with spectra otherwise outrank truths that have none)
+        selfm = np.asarray(top.key.values, dtype=object)[None, :] == np.asarray(ckeys, dtype=object)[:, None]
+        cns = np.where(selfm, 0.0, contrib)
+        a_noself = np.stack([cns[:, spec == s].max(1) for s in np.unique(spec)], 1).mean(1)
         sw = top.sim.values ** p_exp
         t_wmean = (T * sw[None, :]).sum(1) / max(sw.sum(), 1e-9)
     else:
-        a_mean = a_max = tmax = a_tims = a_top5 = t_wmean = np.zeros(n)
+        a_mean = a_max = tmax = a_tims = a_top5 = t_wmean = a_noself = np.zeros(n)
+    own_n, own_sim = own_spectrum_features(q, lib, ckeys, excl_rows)
     f = pd.DataFrame({"pool_row": np.concatenate([cand, np.full(ng, -1)]), "key": ckeys, "direct": d,
                       "direct_n": dn, "analog": a_mean,
                       "analog_max": a_max, "tmax": tmax, "analog_tims": a_tims, "analog_top5": a_top5,
-                      "t_wmean": t_wmean, "mass_err_ppm": (cmass - q.neutral_mass) / q.neutral_mass * 1e6,
+                      "t_wmean": t_wmean, "analog_noself": a_noself, "own_n": own_n, "own_sim": own_sim,
+                      "own_neg": (own_n > 0) * (1.0 - own_sim), "mass_err_ppm": (cmass - q.neutral_mass) / q.neutral_mass * 1e6,
                       "is_gen": np.r_[np.zeros(len(cand)), np.ones(ng)],
                       "gen_sim": np.r_[np.zeros(len(cand)), gen.gen_sim.values if ng else []],
                       "gen_nsrc": np.r_[np.zeros(len(cand)), gen.gen_nsrc.values if ng else []],
@@ -183,7 +191,35 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
     return add_relative(f)
 
 
-REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean"]
+def own_spectrum_features(q: Query, lib: Library, ckeys, excl_rows=None, tol=0.01):
+    """For each candidate: how many library spectra it has for the query's adducts, and the best
+    unshifted entropy similarity of the query to them. A candidate *with* spectra that do not match
+    is evidence against it; one without spectra is merely unknown."""
+    from .library import ADDUCT_IX
+    n = len(ckeys)
+    own_n = np.zeros(n)
+    own_sim = np.zeros(n)
+    rows, owner = lib.rows_of_keys(ckeys)
+    if len(rows) and excl_rows is not None and len(excl_rows):
+        keep = ~np.isin(rows, excl_rows)
+        rows, owner = rows[keep], owner[keep]
+    if not len(rows):
+        return own_n, own_sim
+    ad = lib.L["adduct_code"][rows]
+    qad = {ADDUCT_IX[a] for a in q.adduct if a in ADDUCT_IX}
+    use = np.isin(ad, list(qad))
+    np.add.at(own_n, owner[use], 1)
+    for m, p, a in zip(q.mz, q.p, q.adduct):
+        sel = ad == ADDUCT_IX.get(a, -1)
+        if not sel.any():
+            continue
+        sims = lib.sims(m, p, 0.0, rows[sel], tol=tol, shifted=False)
+        np.maximum.at(own_sim, owner[sel], sims)
+    return own_n, own_sim
+
+
+REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
+            "analog_noself", "own_sim"]
 
 
 def add_relative(f: pd.DataFrame) -> pd.DataFrame:

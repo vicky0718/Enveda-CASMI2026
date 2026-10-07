@@ -176,6 +176,8 @@ def _score_job(key):
         same = h.key.values == key
         excl = same & (h.ref_lib.values == _G["src_of"][key]) if regime == "C1" else same
         hh = h[~excl]
+        tr_rows = _G["truth_rows"].get(key, np.zeros(0, np.int64))
+        excl_rows = tr_rows[lib.L["lib_code"][tr_rows] == _G["src_of"][key]] if regime == "C1" else tr_rows
         keep = ~np.isin(pool.key[cand_all], list(truth)) if regime == "C3" else np.ones(len(cand_all), bool)
         cand = cand_all[keep]
         gkey = "C1" if regime == "C1" else "C23"
@@ -185,7 +187,8 @@ def _score_job(key):
         if regime == "C3":  # the truth is not in the pool: generated copies of it must stay
             gen = P.generate(q, pool, hh, cand_keys=pool.key[cand])
         fr = np.r_[fr_all[keep], frag_scores(list(gen.smiles), q) if len(gen) else []]
-        f = P.channel_scores(q, pool, lib, hh, cand, frag=fr, z=_G["z_of"].get(key), bits=_G["bits"], gen=gen)
+        f = P.channel_scores(q, pool, lib, hh, cand, frag=fr, z=_G["z_of"].get(key), bits=_G["bits"], gen=gen,
+                             excl_rows=excl_rows)
         f["label"] = np.isin(f.key.values, list(truth)).astype(np.int8)
         f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
         feats.append(f)
@@ -211,6 +214,9 @@ def score():
               fr_of={k: g.set_index("pool_row").frag for k, g in FR.groupby("qkey")} if FR is not None else {},
               z_of=dict(zip(Z["keys"], Z["z"])) if Z is not None else {},
               bits=np.load(ART / "pool" / "fp_bits.npy"), ik_of=dict(zip(keys.metric_key, keys.inchikey14)))
+    qk = list(_G["H"])
+    rows, owner = lib.rows_of_keys(np.array(qk))
+    _G["truth_rows"] = {qk[i]: rows[owner == i] for i in np.unique(owner)}
     t0 = time.time()
     res, feats = [], []
     with MP(4) as mp:  # fork: workers share the loaded pool / library
