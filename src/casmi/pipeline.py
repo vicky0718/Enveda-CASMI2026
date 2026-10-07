@@ -7,7 +7,8 @@ import os
 import numpy as np
 import pandas as pd
 
-from .frag import frag_scores
+from .frag import frag_disc as frag_disc_score
+from .frag import frag_matrix
 from .search import ECFP4_BYTES, Library, Pool, Query, analog_hits, make_query, tanimoto
 
 P_EXP, Q_EXP, TOP_PER_SPEC = 3.0, 1.0, 50
@@ -130,7 +131,7 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
                    p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None,
-                   frag=None, gen=None, excl_rows=None):
+                   frag=None, gen=None, excl_rows=None, frag_disc=None):
     """Per-candidate features for one molecule: pool candidates `cand` followed by generated
     candidates `gen` (from `generate`). `hits` must already exclude any references the evaluation
     regime forbids, and `excl_rows` the same library rows (for the own-spectrum features).
@@ -188,6 +189,8 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         f["fp_rank"] = pd.Series(-fz).rank(method="min").values
     if frag is not None:
         f["frag"] = frag
+    if frag_disc is not None:
+        f["frag_disc"] = frag_disc
     if pool.pop is not None:
         add_pop(f, pool.pop)
     return add_relative(f)
@@ -234,7 +237,7 @@ def own_spectrum_features(q: Query, lib: Library, ckeys, excl_rows=None, tol=0.0
 
 
 REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
-            "analog_noself", "own_sim"]
+            "analog_noself", "own_sim", "frag_disc"]
 
 
 def add_relative(f: pd.DataFrame) -> pd.DataFrame:
@@ -296,9 +299,11 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
             z = fp_logits(q, fp_models)
             gen = generate(q, pool, h, cand_keys=pool.key[cand]) if use_gen else None
             smiles = list(pool.df.smiles.values[cand]) + ([] if gen is None else list(gen.smiles))
-            fr = frag_scores(smiles, q)
+            masses = np.r_[pool.mass[cand], [] if gen is None else gen.mass.values]
+            FM, pw = frag_matrix(smiles, q)
             f = channel_scores(q, pool, lib, h, cand, z=z, bits=None if fp_models is None else fp_models["bits"],
-                               frag=fr, gen=gen)
+                               frag=FM @ pw if FM.shape[1] else np.zeros(len(smiles)), gen=gen,
+                               frag_disc=frag_disc_score(FM, pw, masses))
             order = ranker(f) if ranker is not None else heuristic_rank(f)
             rows.append((q.mid, list(f.smiles.values[order])))
         except Exception as e:  # one bad molecule must never sink the file

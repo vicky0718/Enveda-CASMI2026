@@ -149,3 +149,65 @@ def frag_scores(smiles_list, q, tol=0.005):
             sc.append(explain(mz[keep].astype(np.float64), p[keep].astype(np.float64), *tabs[mode], tol=tol))
         out[c] = np.mean(sc) if sc else 0.0
     return out
+
+
+def match_weights(peak_mz, ion_mz, ion_w, tol=0.005):
+    """Per peak: parsimony weight of the best fragment ion within `tol` (0 if unexplained)."""
+    best = np.zeros(len(peak_mz))
+    if len(ion_mz) == 0 or len(peak_mz) == 0:
+        return best
+    idx = np.searchsorted(ion_mz, peak_mz)
+    for off in (-1, 0, 1):
+        j = np.clip(idx + off, 0, len(ion_mz) - 1)
+        best = np.maximum(best, np.where(np.abs(ion_mz[j] - peak_mz) <= tol, ion_w[j], 0.0))
+    return best
+
+
+def frag_matrix(smiles_list, q, tol=0.005):
+    """(M, pw): M[c, k] = how candidate c explains fragment peak k (concatenated over the molecule's
+    spectra, precursor region excluded); pw[k] = peak weight, each spectrum summing to 1 / n_spectra.
+    frag score = M @ pw (identical to frag_scores)."""
+    peaks, modes, pws = [], [], []
+    for mz, p, mode, pm in zip(q.mz, q.p, q.mode, q.prec):
+        keep = mz < pm - 1.5
+        if keep.sum() == 0:
+            continue
+        pk = p[keep].astype(np.float64)
+        peaks.append(mz[keep].astype(np.float64))
+        modes.append(mode)
+        pws.append(pk / max(pk.sum(), 1e-12))
+    if not peaks:
+        return np.zeros((len(smiles_list), 0), np.float32), np.zeros(0)
+    pw = np.concatenate(pws) / len(peaks)
+    M = np.zeros((len(smiles_list), len(pw)), np.float32)
+    for c, s in enumerate(smiles_list):
+        m, w = fragments(s)
+        tabs = {}
+        cols = []
+        for mz, mode in zip(peaks, modes):
+            if mode not in tabs:
+                tabs[mode] = ion_table(m, w, mode)
+            cols.append(match_weights(mz, *tabs[mode], tol=tol))
+        M[c] = np.concatenate(cols)
+    return M, pw
+
+
+def frag_disc(M, pw, masses, tol=0.002):
+    """Isomer-discriminative fragment evidence: explained peak intensity weighted by the share of
+    same-formula (same exact mass) candidates that do NOT explain that peak. Peaks every isomer explains
+    carry no information about which isomer it is."""
+    out = np.zeros(len(M))
+    if M.shape[1] == 0:
+        return out
+    order = np.argsort(masses)
+    ms = np.asarray(masses)[order]
+    start = 0
+    for i in range(1, len(ms) + 1):
+        if i == len(ms) or ms[i] - ms[start] > tol:
+            grp = order[start:i]
+            if len(grp) > 1:
+                e = (M[grp] > 0).astype(np.float32)
+                share_explaining = e.mean(0)
+                out[grp] = (M[grp] * (1.0 - share_explaining)[None, :]) @ pw
+            start = i
+    return out

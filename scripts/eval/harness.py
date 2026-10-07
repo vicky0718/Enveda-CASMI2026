@@ -163,14 +163,33 @@ def mrr(ranked_keys, truth):
     return 0.0
 
 
+_FRAG_ROWS = {}
+
+
+def _frag_cache(key, smiles, q):
+    """frag_matrix with per-molecule memo of candidate rows (pool candidates recur across regimes)."""
+    from casmi.frag import frag_matrix
+    memo = _FRAG_ROWS.setdefault(key, {})
+    todo = [s for s in dict.fromkeys(smiles) if s not in memo]
+    if todo:
+        M, pw = frag_matrix(todo, q)
+        for s, row in zip(todo, M):
+            memo[s] = row
+        memo["__pw__"] = pw
+    pw = memo.get("__pw__")
+    if pw is None:
+        _, pw = frag_matrix([], q)
+    return np.stack([memo[s] for s in smiles]) if smiles else np.zeros((0, len(pw)), np.float32), pw
+
+
 def _score_job(key):
-    from casmi.frag import frag_scores
+    from casmi.frag import frag_disc
     pool, lib, qs, h = _G["pool"], _G["lib"], _G["qs"], _G["H"].get(key)
     g = qs[qs.key == key]
     q = query_of(lib, g.lrow.values, key)
     cand_all = pool.window(q.neutral_mass)
     truth = {key, _G["ik_of"].get(key, key)}
-    fr_all = _G["fr_of"][key].reindex(cand_all).fillna(0).values if key in _G["fr_of"] else np.zeros(len(cand_all))
+    _FRAG_ROWS.clear()  # memo is per molecule (pool candidates recur across the three regimes)
     res, feats, gens = [], [], {}
     for regime in ("C1", "C2", "C3"):
         same = h.key.values == key
@@ -186,9 +205,14 @@ def _score_job(key):
         gen = gens[gkey]
         if regime == "C3":  # the truth is not in the pool: generated copies of it must stay
             gen = P.generate(q, pool, hh, cand_keys=pool.key[cand])
-        fr = np.r_[fr_all[keep], frag_scores(list(gen.smiles), q) if len(gen) else []]
+        # fragment matrix over pool + generated candidates (discriminative score needs the whole list)
+        smi = list(pool.df.smiles.values[cand]) + list(gen.smiles)
+        cm = np.r_[pool.mass[cand], gen.mass.values if len(gen) else []]
+        FM, pw = _frag_cache(key, smi, q)
+        fr = FM @ pw if FM.shape[1] else np.zeros(len(smi))
+        fd = frag_disc(FM, pw, cm)
         f = P.channel_scores(q, pool, lib, hh, cand, frag=fr, z=_G["z_of"].get(key), bits=_G["bits"], gen=gen,
-                             excl_rows=excl_rows)
+                             excl_rows=excl_rows, frag_disc=fd)
         f["label"] = np.isin(f.key.values, list(truth)).astype(np.int8)
         f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
         feats.append(f)
@@ -219,6 +243,7 @@ def score():
     _G["truth_rows"] = {qk[i]: rows[owner == i] for i in np.unique(owner)}
     t0 = time.time()
     res, feats = [], []
+    _FRAG_ROWS.clear()
     with MP(4) as mp:  # fork: workers share the loaded pool / library
         for i, (r, f) in enumerate(mp.imap_unordered(_score_job, list(_G["H"]), chunksize=4)):
             res += r
