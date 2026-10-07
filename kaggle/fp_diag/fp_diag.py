@@ -100,7 +100,7 @@ def main():
             q.raw.append((mz + (L.ENVEDA_POS_SHIFT if env else 0.0), it))
         lr0 = g.lrow.values[0]
         single = M.logits(fpm["nets"], [M.prep_peaks(*q.raw[0], q.prec[0])], [q.prec[0]], [q.adduct[0]],
-                          [str(libs[lib["lib_code"][lr0]])], [0.0 if np.isnan(q.ce[0]) else q.ce[0]],
+                          [M.INSTR_LIST[int(lib["instr"][lr0])]], [0.0 if np.isnan(q.ce[0]) else q.ce[0]],
                           [1.0 if q.mode[0] > 0 else 0.0], device=fpm["device"])[0]
         zpipe = P.fp_logits(q, fpm)
         # same-formula (same exact mass) candidates in the pool window
@@ -123,7 +123,7 @@ def main():
     r = r[r.n_iso > 1]
     pd.set_option("display.width", 200)
     print("=== FP DIAGNOSTIC: held-out molecules, truth vs its same-formula pool isomers ===")
-    print(r.groupby("panel")[[c for c in r.columns if c.startswith(("rr_", "bce_"))]].mean().round(4))
+    print(r.groupby("panel")[[c for c in r.columns if c.startswith(("rr_", "bce_"))]].mean().round(4).T.to_string())
     print("n", r.groupby("panel").size().to_dict())
 
 
