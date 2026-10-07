@@ -46,3 +46,11 @@ the extra coverage is outweighed by dilution.
   the FP-training output + our datasets `casmi26-artifacts` / `casmi26-eval`, prints the out-of-fold
   table (with / without f·z / f·z alone) to the log, and saves `fpnet.pt` + rankers; the submission
   notebook attaches that kernel output. Dry run passed locally with a random tiny model.
+
+## FP model, run 1 (BCE + 0.01 × decoy softmax; A/B held out, C seen in training)
+
+13.6 epochs on 2×T4 (7.7 h); monitor slice of *training* structures: top-1 among ~28 same-window
+decoys 0.89, but per-bit BCE only 0.267 → 0.205. On held-out panels f·z alone is weak
+(A C2 0.215 vs random ≈ 0.12; B C2 0.387) and adding it to the ranker does not help
+(weighted A 0.604 vs 0.612 without) — the contrastive term memorised training structures instead of
+learning transferable substructure bits. Run 3 (pure BCE) launched; V7 (no FP) stays the submission.
