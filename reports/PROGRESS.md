@@ -25,7 +25,11 @@ MRR@25, out of fold:
 | + generator, 20 sources (V6) | 0.894 | 0.734 | 0.354 | 0.673 | 0.562 | 0.159 |
 | + 100 sources, 37 edits (V7) | 0.891 | 0.726 | **0.437** | 0.664 | 0.552 | **0.231** |
 
-Class-share weighted estimate (f1 .16, f2 .30–.45, f3 .54–.39): V7 ≈ 0.60–0.64 on A, 0.40–0.44 on C
+Scoring fix (casmi.rank): a generated structure whose standard InChIKey14 equals the truth's but
+differs from its metric key was previously not counted; with label-based MRR the same V7 model reads
+A C3 **0.459**, C C3 **0.247**.
+
+Class-share weighted estimate (f1 .16, f2 .30–.45, f3 .54–.39): V7 ≈ 0.61–0.65 on A, 0.40–0.45 on C
 (panel A is analog-rich, so it is the optimistic end; the leaderboard is the arbiter).
 
 Oracle coverage of the generator (truth among products, C3): one-step edits from 100 analogs —
@@ -37,4 +41,8 @@ the extra coverage is outweighed by dilution.
 
 * Own FP transformer (spectrum → 6,919 fingerprint bits; BCE + same-window decoy softmax):
   `casmi26-fpnet-train` (A/B held out) and `casmi26-fpnet-train2` (A/B/C held out), T4, ~7.5 h each.
-  Next: f·z feature in the ranker (two input views: per-spectrum mean + merged spectrum).
+  Our egress policy blocks Kaggle's output-file host, so the f·z feature is computed and the ranker
+  retrained **on Kaggle** (`kaggle/ranker_fp/ranker_fp.py`, kernel `casmi26-ranker-fp`): it attaches
+  the FP-training output + our datasets `casmi26-artifacts` / `casmi26-eval`, prints the out-of-fold
+  table (with / without f·z / f·z alone) to the log, and saves `fpnet.pt` + rankers; the submission
+  notebook attaches that kernel output. Dry run passed locally with a random tiny model.
