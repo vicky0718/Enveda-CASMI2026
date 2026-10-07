@@ -236,7 +236,7 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
             if len(cand) == 0:
                 rows.append((q.mid, []))
                 continue
-            h = analog_hits(q, lib, top=300)
+            h = analog_hits(q, lib, top=600)  # must match the harness the ranker was trained on
             z = fp_logits(q, fp_models)
             gen = generate(q, pool, h, cand_keys=pool.key[cand]) if use_gen else None
             smiles = list(pool.df.smiles.values[cand]) + ([] if gen is None else list(gen.smiles))
