@@ -4,9 +4,18 @@
 
 | version | content | runtime (400 mol) | public LB |
 |---|---|---|---|
-| V5 | library + analog propagation + MetFrag-lite, LightGBM ranker (NP panels A+C) | 16 min | _to fill_ |
-| V6 | + class-3 analog-edit generator (top-20 analogs, 23 edits) | 12 min | _to fill_ |
-| **V7** | generator with top-100 analogs, 37 edits (homologs, CH2↔C=O, methylenedioxy) | 17 min | _to fill_ |
+| V5 | library + analog propagation + MetFrag-lite, LightGBM ranker (NP panels A+C) | 16 min | **0.324** |
+| V6 | + class-3 analog-edit generator (top-20 analogs, 23 edits) | 12 min | not submitted |
+| V7 | generator with top-100 analogs, 37 edits (homologs, CH2↔C=O, methylenedioxy) | 17 min | **0.307** |
+| V8 (`-nogen`) | V5 + own-spectrum features + frag_disc + popularity tie-break + 600-hit fix | 13 min | _to fill_ |
+| V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
+| reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
+
+**LB calibration.** The generator *costs* 0.017 on the leaderboard (V7 0.307 vs V5 0.324) although
+validation credited it +0.10–0.20: real class-3 molecules have no close library analogs (validation C3
+truths do), so generated structures only dilute class-2 lists. The pool-only ranker's panel-C estimate
+(0.29–0.38) brackets V5's 0.324, so **panel C without the generator is the calibrated proxy**; panel A and
+any C3 credit are not.
 
 ## Validation (molecules held out across every library; folds held out by molecule)
 
