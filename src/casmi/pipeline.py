@@ -263,9 +263,14 @@ def load_ranker(art):
     boosters = [lgb.Booster(model_file=p) for p in paths]
     cols = json.load(open(f"{art}/ranker_features.json"))
 
+    from .rank import blend_pop
+
     def rank(f):
         x = f.reindex(columns=cols).astype(np.float32).values
-        return np.argsort(-np.mean([b.predict(x) for b in boosters], 0), kind="stable")
+        s = np.mean([b.predict(x) for b in boosters], 0)
+        if "pop" in f.columns:
+            s = blend_pop(s, f["pop"].values)
+        return np.argsort(-s, kind="stable")
     return rank
 
 

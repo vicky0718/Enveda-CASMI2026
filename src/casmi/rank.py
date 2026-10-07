@@ -9,7 +9,23 @@ import pandas as pd
 
 BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_ppm", "frag", "analog_tims",
               "analog_top5", "t_wmean", "is_gen", "gen_sim", "gen_nsrc", "gen_steps", "gen_rule", "gen_absdelta",
-              "analog_noself", "own_n", "own_sim", "own_neg", "pop", "pop_patents", "pop_pubmed"]
+              "analog_noself", "own_n", "own_sim", "own_neg"]
+# Popularity is NOT a ranker feature: validation truths are library compounds, far better documented than
+# real class-2/3 answers (panel A: truth beats same-formula library isomers on popularity 96 % of the
+# time; panel B loses 0.085 when the ranker learns it). It is applied as a small tie-breaker instead,
+# tuned on panels B/C only: final = z(ranker score) + POP_LAMBDA * z(pop), z within the molecule's list.
+POP_LAMBDA = 0.1
+
+
+def blend_pop(score, pop):
+    """z(score) + POP_LAMBDA * z(pop) within one molecule's candidate list; unknown pop -> list median."""
+    score = np.asarray(score, float)
+    pop = np.asarray(pop, float)
+    if POP_LAMBDA == 0 or len(score) < 2 or np.all(np.isnan(pop)):
+        return score
+    pop = np.where(np.isnan(pop), np.nanmedian(pop), pop)
+    z = lambda x: (x - x.mean()) / (x.std() or 1.0)  # noqa: E731
+    return z(score) + POP_LAMBDA * z(pop)
 PARAMS = dict(objective="lambdarank", metric="map", eval_at=[25], learning_rate=0.05, num_leaves=31,
               min_data_in_leaf=50, feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1,
               lambdarank_truncation_level=25, verbose=-1, seed=0, deterministic=True, num_threads=4)
@@ -18,7 +34,8 @@ ROUNDS = 300
 
 def feature_cols(f: pd.DataFrame):
     feats = [c for c in BASE_FEATS + ["fp", "fp_rank"] if c in f.columns]
-    return feats + [c for c in f.columns if c.endswith("_gap") or c.endswith("_rk")] + ["n_cand"]
+    rel = [c for c in f.columns if (c.endswith("_gap") or c.endswith("_rk")) and not c.startswith("pop")]
+    return feats + rel + ["n_cand"]
 
 
 def mrr_of(f: pd.DataFrame, score) -> pd.DataFrame:
