@@ -81,7 +81,7 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
     from rdkit import Chem
     from rdkit.Chem.Descriptors import ExactMolWt
 
-    from .edits import EDITS, apply_edit, edits_for_delta
+    from .edits import EDITS, apply_edit, apply_edit_rules, edits_for_delta
     from .fp import full_fp
     M = q.neutral_mass
     k_refs = k_refs or GEN_K_REFS
@@ -89,17 +89,18 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
     prods = {}
     tol = max(0.005, M * ppm * 1e-6)
 
-    def put(p, sim, steps):
-        g = prods.setdefault(p, [0.0, 0, steps])
-        g[0] = max(g[0], float(sim))
+    def put(p, sim, steps, rule=-1, delta=0.0):
+        g = prods.setdefault(p, [0.0, 0, steps, rule, delta])
+        if sim > g[0]:  # rule / delta of the best-matching source
+            g[0], g[3], g[4] = float(sim), rule, delta
         g[1] += 1
         g[2] = min(g[2], steps)
 
     for i, (r, sim) in enumerate(zip(h.pool_row.values, h.sim.values)):
         names = edits_for_delta(M - pool.mass[r], tol=tol)
         for n in names:
-            for p in apply_edit(pool.df.smiles.values[r], n):
-                put(p, sim, 1)
+            for p, rule in apply_edit_rules(pool.df.smiles.values[r], n).items():
+                put(p, sim, 1, rule, abs(EDITS[n][0]))
         if not names and i < GEN_TWO_K:  # a small edit, then any edit closing the remaining gap
             for a in SMALL_EDITS:
                 rest = edits_for_delta(M - pool.mass[r] - EDITS[a][0], tol=tol)
@@ -108,9 +109,9 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
                 for mid in apply_edit(pool.df.smiles.values[r], a)[:30]:
                     for n in rest:
                         for p in apply_edit(mid, n)[:30]:
-                            put(p, sim, 2)
+                            put(p, sim, 2, -1, abs(EDITS[a][0] + EDITS[n][0]))
     rows, seen = [], set(cand_keys)
-    for smi, (sim, nsrc, steps) in prods.items():
+    for smi, (sim, nsrc, steps, rule, delta) in prods.items():
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
             continue
@@ -122,8 +123,9 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
         if f is None:
             continue
         seen.add(key)
-        rows.append((smi, key, mass, f, sim, nsrc, steps))
-    return pd.DataFrame(rows, columns=["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc", "gen_steps"])
+        rows.append((smi, key, mass, f, sim, nsrc, steps, rule, delta))
+    return pd.DataFrame(rows, columns=["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc", "gen_steps",
+                                       "gen_rule", "gen_absdelta"])
 
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
@@ -166,7 +168,9 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
                       "is_gen": np.r_[np.zeros(len(cand)), np.ones(ng)],
                       "gen_sim": np.r_[np.zeros(len(cand)), gen.gen_sim.values if ng else []],
                       "gen_nsrc": np.r_[np.zeros(len(cand)), gen.gen_nsrc.values if ng else []],
-                      "gen_steps": np.r_[np.zeros(len(cand)), gen.gen_steps.values if ng else []]})
+                      "gen_steps": np.r_[np.zeros(len(cand)), gen.gen_steps.values if ng else []],
+                      "gen_rule": np.r_[np.full(len(cand), -1), gen.gen_rule.values if ng else []],
+                      "gen_absdelta": np.r_[np.zeros(len(cand)), gen.gen_absdelta.values if ng else []]})
     f["smiles"] = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng \
         else pool.df.smiles.values[cand]
     if z is not None and n:

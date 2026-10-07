@@ -66,6 +66,34 @@ def edits_for_delta(delta, tol=0.005):
     return [n for n, (m, _) in EDITS.items() if abs(m - delta) <= tol]
 
 
+RULE_ID = {}
+for _n, (_m, _rs) in EDITS.items():
+    for _i in range(len(_rs)):
+        RULE_ID[(_n, _i)] = len(RULE_ID)
+
+
+def apply_edit_rules(smiles, name, max_products=200):
+    """{product SMILES: rule id} for edit `name` (rule id = global index of the reaction pattern)."""
+    mol = Chem.MolFromSmiles(smiles) if isinstance(smiles, str) else None
+    if mol is None:
+        return {}
+    Chem.RemoveStereochemistry(mol)
+    out = {}
+    for i, rxn in enumerate(_rxns(name)):
+        try:
+            prods = rxn.RunReactants((mol,), maxProducts=max_products)
+        except Exception:
+            continue
+        for ps in prods:
+            p = ps[0]
+            try:
+                Chem.SanitizeMol(p)
+                out.setdefault(Chem.MolToSmiles(p), RULE_ID[(name, i)])
+            except Exception:
+                continue
+    return out
+
+
 def apply_edit(smiles, name, max_products=200):
     """All single-site products of edit `name` on `smiles` (canonical, stereo-free, unique)."""
     mol = Chem.MolFromSmiles(smiles) if isinstance(smiles, str) else None
