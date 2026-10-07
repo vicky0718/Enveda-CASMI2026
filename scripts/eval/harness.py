@@ -188,7 +188,7 @@ def _score_job(key):
         f = P.channel_scores(q, pool, lib, hh, cand, frag=fr, z=_G["z_of"].get(key), bits=_G["bits"], gen=gen)
         f["label"] = np.isin(f.key.values, list(truth)).astype(np.int8)
         f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
-        feats.append(f.drop(columns=["smiles"]))
+        feats.append(f)
         ranked = list(dict.fromkeys(f.key.values[P.heuristic_rank(f)]))
         res.append({"key": key, "panel": g.panel.iloc[0], "regime": regime, "n_cand": f.key.nunique(),
                     "n_gen": int(f.is_gen.sum()), "in_list": bool(f.label.any()),
