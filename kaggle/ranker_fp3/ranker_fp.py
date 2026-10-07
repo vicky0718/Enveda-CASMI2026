@@ -39,6 +39,7 @@ from casmi import library as L  # noqa: E402
 from casmi import pipeline as P  # noqa: E402
 from casmi import rank as R  # noqa: E402
 from casmi.fp import full_fp  # noqa: E402
+from casmi import fpmodel as M  # noqa: E402
 from casmi.search import Query  # noqa: E402
 
 
@@ -85,6 +86,7 @@ def main():
             mz, it = raw[int(lib["row"][lr])]
             env = libs[lib["lib_code"][lr]].startswith("enveda") and lib["mode"][lr] > 0
             q.raw.append((mz + (L.ENVEDA_POS_SHIFT if env else 0.0), it))
+        q.instr = [M.INSTR_LIST[int(lib["instr"][lr])] for lr in g.lrow.values]  # true instrument
         z_of[key] = P.fp_logits(q, fpm)
     print("logits", len(z_of), f"{time.time() - T0:.0f}s", flush=True)
 

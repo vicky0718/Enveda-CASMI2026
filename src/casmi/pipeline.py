@@ -45,22 +45,19 @@ def load_fp_models(art, device=None):
 
 
 def fp_logits(q: Query, fpm):
-    """Mean logits over a molecule's spectra, plus the merged-spectrum view (two input views)."""
+    """Reliability-weighted mean of per-spectrum logits. The merged-spectrum view is NOT used: the model
+    was trained on single spectra and a merged peak list is out of distribution (held-out within-formula
+    MRR on public NPs 0.42 single vs 0.31 with the merged view averaged in)."""
     from . import fpmodel as M
     if fpm is None or not q.raw:
         return None
     peaks = [M.prep_peaks(m, i, pm) for (m, i), pm in zip(q.raw, q.prec)]
-    merged = M.prep_peaks(*M.merge_peaks(q.raw), float(np.median(q.prec)))
-    ins = ["timsTOF"] * (len(peaks) + 1)
     ces = [0.0 if np.isnan(c) else c for c in q.ce]
-    ces = ces + [float(np.mean(ces))]
     modes = [1.0 if m > 0 else 0.0 for m in q.mode]
-    modes = modes + [modes[0]]
-    adducts = list(q.adduct) + [q.adduct[0]]
-    precs = list(q.prec) + [float(np.median(q.prec))]
-    z = M.logits(fpm["nets"], peaks + [merged], precs, adducts, ins, ces, modes, device=fpm["device"])
+    instr = getattr(q, "instr", None) or ["timsTOF"] * len(peaks)  # test: all timsTOF; validation sets it
+    z = M.logits(fpm["nets"], peaks, list(q.prec), list(q.adduct), instr, ces, modes, device=fpm["device"])
     w = spectrum_weights(q)  # sparse / minor-adduct spectra count less
-    return 0.5 * (w[:, None] * z[:-1]).sum(0) + 0.5 * z[-1]
+    return (w[:, None] * z).sum(0)
 
 
 def fp_scores(pool: Pool, cand, z, bits):
