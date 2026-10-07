@@ -323,7 +323,8 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
             FM, pw = frag_matrix(smiles, q)
             f = channel_scores(q, pool, lib, h, cand, z=z, bits=None if fp_models is None else fp_models["bits"],
                                frag=FM @ pw if FM.shape[1] else np.zeros(len(smiles)), gen=gen,
-                               frag_disc=frag_disc_score(FM, pw, masses))
+                               frag_disc=frag_disc_score(FM, pw, masses),
+                               z_prior=None if fp_models is None else fp_models.get("prior"))
             order = ranker(f) if ranker is not None else heuristic_rank(f)
             rows.append((q.mid, list(f.smiles.values[order])))
         except Exception as e:  # one bad molecule must never sink the file

@@ -14,5 +14,7 @@
     "vigneshnehru/casmi26-artifacts",
     "metric/rdkit-2026-3-3-wheel"
   ],
-  "kernel_sources": []
+  "kernel_sources": [
+    "vigneshnehru/casmi26-ranker-fp3"
+  ]
 }

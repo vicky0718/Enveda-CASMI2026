@@ -41,6 +41,7 @@ ranker = P.load_ranker(MODEL)
 fpm = P.load_fp_models(MODEL)
 if fpm is not None:
     fpm["bits"] = np.load(f"{ART}/fp_bits.npy")
+    fpm["prior"] = np.load(f"{ART}/fp_prior.npy")  # for the prior-normalised f·z feature
 print("artifact files:", sorted(os.listdir(ART)))
 print("gen K:", getattr(P, "GEN_K_REFS", None), "| ranker:", "loaded" if ranker is not None else "NONE (heuristic)",
       "| fp models:", 0 if fpm is None else len(fpm["nets"]))
