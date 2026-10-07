@@ -188,7 +188,22 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         f["fp_rank"] = pd.Series(-fz).rank(method="min").values
     if frag is not None:
         f["frag"] = frag
+    if pool.pop is not None:
+        add_pop(f, pool.pop)
     return add_relative(f)
+
+
+def add_pop(f: pd.DataFrame, pop: np.ndarray, group=None):
+    """Popularity prior (PubChem substances + PubMed, patents); generated / unknown structures NaN.
+    Relative features are taken within the molecule's list (or within `group` columns)."""
+    pr = f.pool_row.values
+    vals = np.where((pr >= 0)[:, None], pop[np.clip(pr, 0, None)], np.nan)
+    f["pop"], f["pop_patents"], f["pop_pubmed"] = vals[:, 0], vals[:, 1], vals[:, 2]
+    g = f.groupby(group, sort=False)["pop"] if group else f["pop"]
+    mx = g.transform("max") if group else g.max()
+    f["pop_gap"] = f["pop"] - mx
+    f["pop_rk"] = g.rank(ascending=False, method="min")
+    return f
 
 
 def own_spectrum_features(q: Query, lib: Library, ckeys, excl_rows=None, tol=0.01):

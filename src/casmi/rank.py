@@ -9,7 +9,7 @@ import pandas as pd
 
 BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_ppm", "frag", "analog_tims",
               "analog_top5", "t_wmean", "is_gen", "gen_sim", "gen_nsrc", "gen_steps", "gen_rule", "gen_absdelta",
-              "analog_noself", "own_n", "own_sim", "own_neg"]
+              "analog_noself", "own_n", "own_sim", "own_neg", "pop", "pop_patents", "pop_pubmed"]
 PARAMS = dict(objective="lambdarank", metric="map", eval_at=[25], learning_rate=0.05, num_leaves=31,
               min_data_in_leaf=50, feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1,
               lambdarank_truncation_level=25, verbose=-1, seed=0, deterministic=True, num_threads=4)

@@ -64,6 +64,8 @@ class Pool:
         self.row_of_key = pd.Series(np.arange(len(self.df)), index=self.key)
         self.fp = np.load(f"{pool_dir}/fp_full.npy", mmap_mode="r")
         self._e4 = None
+        import os
+        self.pop = np.load(f"{pool_dir}/pop.npy") if os.path.exists(f"{pool_dir}/pop.npy") else None
 
     @property
     def ecfp4(self):
