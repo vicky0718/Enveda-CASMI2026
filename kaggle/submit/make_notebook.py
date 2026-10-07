@@ -33,8 +33,14 @@ pool = Pool(ART)
 lib = Library(L.load(f"{ART}/library.npz"), pool)
 test = pd.read_parquet(f"{COMP}/test.parquet")
 print(len(test), "spectra", test.molecule_id.nunique(), "molecules", f"{time.time() - T0:.0f}s")''',
-    r'''ranker = P.load_ranker(ART)
-fpm = P.load_fp_models(ART)
+    r'''# models: our ranker+FP kernel output (fpnet.pt + rankers trained with f·z) if attached, else the dataset's
+fpn = glob.glob("/kaggle/input/**/fpnet.pt", recursive=True)
+MODEL = os.path.dirname(fpn[0]) if fpn else ART
+print("model dir", MODEL)
+ranker = P.load_ranker(MODEL)
+fpm = P.load_fp_models(MODEL)
+if fpm is not None:
+    fpm["bits"] = np.load(f"{ART}/fp_bits.npy")
 print("artifact files:", sorted(os.listdir(ART)))
 print("gen K:", getattr(P, "GEN_K_REFS", None), "| ranker:", "loaded" if ranker is not None else "NONE (heuristic)",
       "| fp models:", 0 if fpm is None else len(fpm["nets"]))
