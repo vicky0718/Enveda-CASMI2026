@@ -33,9 +33,11 @@ pool = Pool(ART)
 lib = Library(L.load(f"{ART}/library.npz"), pool)
 test = pd.read_parquet(f"{COMP}/test.parquet")
 print(len(test), "spectra", test.molecule_id.nunique(), "molecules", f"{time.time() - T0:.0f}s")''',
-    r'''# models: our ranker+FP kernel output (fpnet.pt + rankers trained with f·z) if attached, else the dataset's
+    r'''# models: a dedicated model dataset (casmi26_models.txt) if attached, else our ranker+FP kernel output
+# (fpnet.pt + rankers trained with f·z), else the artifacts dataset's own rankers
+mdl = glob.glob("/kaggle/input/**/casmi26_models.txt", recursive=True)
 fpn = glob.glob("/kaggle/input/**/fpnet.pt", recursive=True)
-MODEL = os.path.dirname(fpn[0]) if fpn else ART
+MODEL = os.path.dirname(mdl[0]) if mdl else (os.path.dirname(fpn[0]) if fpn else ART)
 print("model dir", MODEL)
 ranker = P.load_ranker(MODEL)
 fpm = P.load_fp_models(MODEL)
@@ -47,7 +49,16 @@ print("gen K:", getattr(P, "GEN_K_REFS", None), "| ranker:", "loaded" if ranker 
       "| fp models:", 0 if fpm is None else len(fpm["nets"]))
 USE_GEN = __USE_GEN__
 print("generator:", USE_GEN)
-rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=USE_GEN)
+# PubChem candidate channel (NCBI PubChem tier + row-aligned popularity), if both datasets are attached
+pcm = glob.glob("/kaggle/input/**/pc_mass.npy", recursive=True)
+pcp = glob.glob("/kaggle/input/**/pc_lsid.npy", recursive=True)
+PC_N = __PC_N__
+tier = None
+if pcm and pcp and PC_N > 0:
+    from casmi.pubchem import PubChemTier
+    tier = PubChemTier(os.path.dirname(pcm[0]), os.path.dirname(pcp[0]))
+print("pubchem:", None if tier is None else f"{tier.n:,} structures, top {PC_N}")
+rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=USE_GEN, pubchem=tier, pc_top_n=PC_N)
 print(f"ranked {len(rows)} molecules, {time.time() - T0:.0f}s")''',
     r'''from casmi.metric import candidate_key
 sub_ids = pd.read_csv(f"{COMP}/sample_submission.csv").molecule_id
@@ -74,13 +85,17 @@ print(sub.shape, "candidates/molecule min/median", n.min(), n.median(), f"{time.
 def main():
     import sys
     use_gen = "--nogen" not in sys.argv
-    cells = [c.replace("__USE_GEN__", str(use_gen)) for c in CELLS]
+    pc_n = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--pc=")), 0)
+    cells = [c.replace("__USE_GEN__", str(use_gen)).replace("__PC_N__", str(pc_n)) for c in CELLS]
     nb = {"cells": [{"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
                      "source": c.strip("\n").splitlines(keepends=True)} for c in cells],
           "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
                        "language_info": {"name": "python"}},
           "nbformat": 4, "nbformat_minor": 5}
-    p = Path(__file__).with_name("casmi26_submit.ipynb" if use_gen else "casmi26_submit_nogen.ipynb")
+    name = "casmi26_submit.ipynb" if use_gen else "casmi26_submit_nogen.ipynb"
+    if pc_n:
+        name = f"casmi26_submit_pc{pc_n}.ipynb"
+    p = Path(__file__).with_name(name)
     p.write_text(json.dumps(nb, indent=1))
     print(p)
 

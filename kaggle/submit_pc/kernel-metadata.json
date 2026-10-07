@@ -1,0 +1,14 @@
+{
+  "id": "vigneshnehru/casmi26-own-submit-pc",
+  "title": "casmi26-own-submit-pc",
+  "code_file": "casmi26_submit_pc10.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "competition_sources": ["enveda-CASMI26-molecule-id-mass-spectra"],
+  "dataset_sources": ["vigneshnehru/casmi26-artifacts", "vigneshnehru/casmi26-models-pc", "ahmedberatozer/casmi26-pubchem-tier",
+                      "dmitriigluzdov/casmi26-pubchem-popularity-prior", "metric/rdkit-2026-3-3-wheel"],
+  "kernel_sources": []
+}

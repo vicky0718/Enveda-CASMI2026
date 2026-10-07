@@ -14,12 +14,17 @@ import pandas as pd
 
 
 class PubChemTier:
-    def __init__(self, d):
+    def __init__(self, d, pop_dir=None):
+        """d: the tier arrays (pc_mass / pc_off / pc_smiles); pop_dir: row-aligned pc_lsid / pc_lpmid
+        (defaults to d)."""
+        pop_dir = pop_dir or d
         self.mass = np.load(f"{d}/pc_mass.npy", mmap_mode="r")
         self.off = np.load(f"{d}/pc_off.npy", mmap_mode="r")
         self.smi = np.load(f"{d}/pc_smiles.npy", mmap_mode="r")
-        self.lsid = np.load(f"{d}/pc_lsid.npy", mmap_mode="r") if os.path.exists(f"{d}/pc_lsid.npy") else None
-        self.lpmid = np.load(f"{d}/pc_lpmid.npy", mmap_mode="r") if os.path.exists(f"{d}/pc_lpmid.npy") else None
+        self.lsid = np.load(f"{pop_dir}/pc_lsid.npy", mmap_mode="r") if os.path.exists(f"{pop_dir}/pc_lsid.npy") \
+            else None
+        self.lpmid = np.load(f"{pop_dir}/pc_lpmid.npy", mmap_mode="r") if os.path.exists(f"{pop_dir}/pc_lpmid.npy") \
+            else None
         self.n = len(self.mass)
 
     def smiles(self, i):
