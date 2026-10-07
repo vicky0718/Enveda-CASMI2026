@@ -146,7 +146,9 @@ def main():
         return LR * 0.5 * (1 + math.cos(math.pi * min(1.0, (s - WARM) / max(1, total - WARM))))
 
     def save():
-        sd = {k: v.detach().half().cpu() for k, v in net.state_dict().items()}
+        # fp16 halves the file, but the sinusoidal tables (*.inv) must stay float32
+        sd = {k: (v.detach().cpu() if k.endswith(".inv") else v.detach().half().cpu())
+              for k, v in net.state_dict().items()}
         torch.save({"model": sd, "nbits": nbits, "d": D, "layers": LAYERS}, os.path.join(OUT, "fpnet.pt"))
 
     while True:

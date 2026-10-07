@@ -139,7 +139,8 @@ def load(path, device="cpu"):
     """Load one of our own checkpoints ({model, nbits, d, layers}) with the tensor-only loader."""
     ck = torch.load(path, map_location="cpu", weights_only=True)
     net = FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"])).to(device).eval()
-    net.load_state_dict(ck["model"])
+    # keep the float32 sinusoidal tables built by the constructor (fp16 checkpoints destroy them)
+    net.load_state_dict({k: v.float() for k, v in ck["model"].items() if not k.endswith(".inv")}, strict=False)
     return net
 
 
