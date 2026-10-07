@@ -44,7 +44,9 @@ if fpm is not None:
 print("artifact files:", sorted(os.listdir(ART)))
 print("gen K:", getattr(P, "GEN_K_REFS", None), "| ranker:", "loaded" if ranker is not None else "NONE (heuristic)",
       "| fp models:", 0 if fpm is None else len(fpm["nets"]))
-rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=True)
+USE_GEN = __USE_GEN__
+print("generator:", USE_GEN)
+rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=USE_GEN)
 print(f"ranked {len(rows)} molecules, {time.time() - T0:.0f}s")''',
     r'''from casmi.metric import candidate_key
 sub_ids = pd.read_csv(f"{COMP}/sample_submission.csv").molecule_id
@@ -69,12 +71,15 @@ print(sub.shape, "candidates/molecule min/median", n.min(), n.median(), f"{time.
 
 
 def main():
+    import sys
+    use_gen = "--nogen" not in sys.argv
+    cells = [c.replace("__USE_GEN__", str(use_gen)) for c in CELLS]
     nb = {"cells": [{"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
-                     "source": c.strip("\n").splitlines(keepends=True)} for c in CELLS],
+                     "source": c.strip("\n").splitlines(keepends=True)} for c in cells],
           "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
                        "language_info": {"name": "python"}},
           "nbformat": 4, "nbformat_minor": 5}
-    p = Path(__file__).with_name("casmi26_submit.ipynb")
+    p = Path(__file__).with_name("casmi26_submit.ipynb" if use_gen else "casmi26_submit_nogen.ipynb")
     p.write_text(json.dumps(nb, indent=1))
     print(p)
 
