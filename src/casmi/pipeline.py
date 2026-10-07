@@ -7,6 +7,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from .edge import ap_matrix, query_info, spectrum_weights
 from .frag import frag_disc as frag_disc_score
 from .frag import frag_matrix
 from .search import ECFP4_BYTES, Library, Pool, Query, analog_hits, make_query, tanimoto
@@ -54,7 +55,8 @@ def fp_logits(q: Query, fpm):
     adducts = list(q.adduct) + [q.adduct[0]]
     precs = list(q.prec) + [float(np.median(q.prec))]
     z = M.logits(fpm["nets"], peaks + [merged], precs, adducts, ins, ces, modes, device=fpm["device"])
-    return 0.5 * z[:-1].mean(0) + 0.5 * z[-1]
+    w = spectrum_weights(q)  # sparse / minor-adduct spectra count less
+    return 0.5 * (w[:, None] * z[:-1]).sum(0) + 0.5 * z[-1]
 
 
 def fp_scores(pool: Pool, cand, z, bits):
@@ -131,7 +133,7 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
                    p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None,
-                   frag=None, gen=None, excl_rows=None, frag_disc=None):
+                   frag=None, gen=None, excl_rows=None, frag_disc=None, z_prior=None):
     """Per-candidate features for one molecule: pool candidates `cand` followed by generated
     candidates `gen` (from `generate`). `hits` must already exclude any references the evaluation
     regime forbids, and `excl_rows` the same library rows (for the own-spectrum features).
@@ -166,8 +168,19 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         a_noself = np.stack([cns[:, spec == s].max(1) for s in np.unique(spec)], 1).mean(1)
         sw = top.sim.values ** p_exp
         t_wmean = (T * sw[None, :]).sum(1) / max(sw.sum(), 1e-9)
+        # edge cases: reliability-weighted fusion over spectra; distance-aware (atom-pair) similarity
+        specs = np.unique(spec)
+        wspec = spectrum_weights(q)[specs.astype(int)] if len(specs) else np.zeros(0)
+        wspec = wspec / wspec.sum() if wspec.sum() > 0 else np.full(len(specs), 1.0 / len(specs))
+        a_w = per @ wspec
+        csmi = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng else pool.df.smiles.values[cand]
+        Tap = tanimoto(ap_matrix(list(csmi)), ap_matrix(list(pool.df.smiles.values[top.pool_row.values])))
+        cap = (top.sim.values[None, :] ** p_exp) * (Tap ** q_exp)
+        per_ap = np.stack([cap[:, spec == s].max(1) for s in specs], 1)
+        a_ap, a_ap_w, ap_tmax = per_ap.mean(1), per_ap @ wspec, Tap.max(1)
     else:
         a_mean = a_max = tmax = a_tims = a_top5 = t_wmean = a_noself = np.zeros(n)
+        a_w = a_ap = a_ap_w = ap_tmax = np.zeros(n)
     own_n, own_sim = own_spectrum_features(q, lib, ckeys, excl_rows)
     f = pd.DataFrame({"pool_row": np.concatenate([cand, np.full(ng, -1)]), "key": ckeys, "direct": d,
                       "direct_n": dn, "analog": a_mean,
@@ -179,7 +192,10 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
                       "gen_nsrc": np.r_[np.zeros(len(cand)), gen.gen_nsrc.values if ng else []],
                       "gen_steps": np.r_[np.zeros(len(cand)), gen.gen_steps.values if ng else []],
                       "gen_rule": np.r_[np.full(len(cand), -1), gen.gen_rule.values if ng else []],
-                      "gen_absdelta": np.r_[np.zeros(len(cand)), gen.gen_absdelta.values if ng else []]})
+                      "gen_absdelta": np.r_[np.zeros(len(cand)), gen.gen_absdelta.values if ng else []],
+                      "analog_w": a_w, "analog_ap": a_ap, "analog_ap_w": a_ap_w, "ap_tmax": ap_tmax})
+    for k, v in query_info(q, hh).items():
+        f[k] = v
     f["smiles"] = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng \
         else pool.df.smiles.values[cand]
     if z is not None and n:
@@ -187,6 +203,9 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         fz = y @ z.astype(np.float32)
         f["fp"] = fz - fz.max()
         f["fp_rank"] = pd.Series(-fz).rank(method="min").values
+        if z_prior is not None:  # what the spectrum adds over the bit-frequency prior
+            fn = y @ (z.astype(np.float32) - z_prior)
+            f["fp_norm"] = fn - fn.max()
     if frag is not None:
         f["frag"] = frag
     if frag_disc is not None:
@@ -237,7 +256,7 @@ def own_spectrum_features(q: Query, lib: Library, ckeys, excl_rows=None, tol=0.0
 
 
 REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
-            "analog_noself", "own_sim", "frag_disc"]
+            "analog_noself", "own_sim", "frag_disc", "analog_w", "analog_ap", "analog_ap_w", "ap_tmax"]
 
 
 def add_relative(f: pd.DataFrame) -> pd.DataFrame:

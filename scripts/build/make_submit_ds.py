@@ -15,7 +15,7 @@ from casmi.paths import ROOT
 ART = ROOT / "data" / "artifacts"
 OUT = ART / "submit_ds"
 MODULES = ["__init__", "simkernels", "spectra", "library", "formula", "fpmodel", "search", "pipeline", "metric",
-           "frag", "edits", "fp", "rank"]
+           "frag", "edits", "fp", "rank", "edge"]
 SLUG = "casmi26-artifacts"
 
 
@@ -25,7 +25,7 @@ def main():
         shutil.copy(ROOT / "src" / "casmi" / f"{m}.py", OUT / f"code__{m}.py")
     pool = pd.read_parquet(ART / "pool" / "pool.parquet")
     pool[["key", "smiles", "exact_mass", "src"]].to_parquet(OUT / "pool.parquet")
-    for f in ("fp_full.npy", "fp_bits.npy", "pop.npy"):
+    for f in ("fp_full.npy", "fp_bits.npy", "pop.npy", "fp_prior.npy"):
         dst = OUT / f
         if not dst.exists() or dst.stat().st_mtime < (ART / "pool" / f).stat().st_mtime:
             shutil.copy(ART / "pool" / f, dst)

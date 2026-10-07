@@ -61,6 +61,8 @@ def main():
     lib = L.load(f"{ART}/library.npz")
     qs = pd.read_parquet(f"{EV}/queries.parquet")
     feats_df = pd.read_parquet(f"{EV}/features.parquet")
+    # the submission runs without the generator (LB: it costs 0.017), so train / validate likewise
+    feats_df = feats_df[(feats_df.is_gen == 0) & feats_df.regime.isin(["C1", "C2"])].reset_index(drop=True)
     fp_full = np.load(f"{ART}/fp_full.npy", mmap_mode="r")
     bits = np.load(f"{ART}/fp_bits.npy")
     fpm = P.load_fp_models(os.path.dirname(FPN[0]))
@@ -92,19 +94,28 @@ def main():
     gfp = {s: full_fp(s) for s in gsmi}
     print("generated fingerprints", len(gfp), f"{time.time() - T0:.0f}s", flush=True)
     fz = np.zeros(len(feats_df), np.float32)
+    zp = np.load(f"{ART}/fp_prior.npy") if os.path.exists(f"{ART}/fp_prior.npy") else None
+    fzn = np.zeros(len(feats_df), np.float32) if zp is not None else None
     for (key, _), g in feats_df.groupby(["qkey", "regime"], sort=False):
         z = z_of[key].astype(np.float32)
         pr = g.pool_row.values
         fps = np.stack([np.asarray(fp_full[r]) if r >= 0 else gfp[s] for r, s in zip(pr, g.smiles.values)])
         y = np.unpackbits(fps, axis=1, count=P.FULL_BITS)[:, bits].astype(np.float32)
         fz[g.index.values] = y @ z
+        if zp is not None:
+            fzn[g.index.values] = y @ (z - zp)
     feats_df["fz"] = fz
     grp = feats_df.groupby(["qkey", "regime"], sort=False).fz
     feats_df["fp"] = feats_df.fz - grp.transform("max")
     feats_df["fp_rank"] = grp.rank(ascending=False, method="min")
+    if fzn is not None:  # f·(z - z_prior): what the spectrum adds over the bit-frequency prior
+        feats_df["fzn"] = fzn
+        gn = feats_df.groupby(["qkey", "regime"], sort=False).fzn
+        feats_df["fp_norm"] = feats_df.fzn - gn.transform("max")
+        feats_df = feats_df.drop(columns=["fzn"])
     print("f·z done", f"{time.time() - T0:.0f}s", flush=True)
 
-    f = R.prepare(feats_df.drop(columns=["fz"]))
+    f = R.prepare(feats_df.drop(columns=["fz"]), regimes=("C1", "C2"))
     feats = R.feature_cols(f)
     base = [c for c in feats if not c.startswith("fp")]
     rep_fp = R.mrr_of(f, R.cv(f, feats))

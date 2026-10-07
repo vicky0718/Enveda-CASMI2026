@@ -37,8 +37,6 @@ import pyarrow.parquet as pq  # noqa: E402
 
 from casmi import library as L  # noqa: E402
 from casmi import pipeline as P  # noqa: E402
-from casmi import rank as R  # noqa: E402
-from casmi.fp import full_fp  # noqa: E402
 from casmi.search import Query  # noqa: E402
 
 
@@ -57,77 +55,76 @@ def raw_peaks(rows):
     return out
 
 
+def bce(p, y):
+    p = np.clip(p, 1e-6, 1 - 1e-6)
+    return float(-(y * np.log(p) + (1 - y) * np.log(1 - p)).mean())
+
+
 def main():
     lib = L.load(f"{ART}/library.npz")
     qs = pd.read_parquet(f"{EV}/queries.parquet")
-    feats_df = pd.read_parquet(f"{EV}/features.parquet")
-    # the submission runs without the generator (LB: it costs 0.017), so train / validate likewise
-    feats_df = feats_df[(feats_df.is_gen == 0) & feats_df.regime.isin(["C1", "C2"])].reset_index(drop=True)
     fp_full = np.load(f"{ART}/fp_full.npy", mmap_mode="r")
     bits = np.load(f"{ART}/fp_bits.npy")
+    zp = np.load(f"{ART}/fp_prior.npy")
+    pool = pd.read_parquet(f"{ART}/pool.parquet", columns=["key", "exact_mass", "src"])
+    row_of = pd.Series(np.arange(len(pool)), index=pool.key.values)
     fpm = P.load_fp_models(os.path.dirname(FPN[0]))
     fpm["bits"] = bits
-    print("fp nets", len(fpm["nets"]), "device", fpm["device"], f"{time.time() - T0:.0f}s", flush=True)
-
+    from casmi import fpmodel as M
+    # held-out panel molecules: single-spectrum view only (exactly the training input) and pipeline view
+    rng = np.random.default_rng(0)
+    qs = qs[qs.key.isin(rng.choice(qs.key.unique(), 600, replace=False))]
+    # control: 300 *training* structures (seen by the model), one library spectrum each
+    lkeys = lib["keys"][lib["key_code"]]
+    held = set(pd.read_parquet(f"{EV}/queries.parquet").key)
+    cand_rows = rng.choice(len(lkeys), 20000, replace=False)
+    cand_rows = [r for r in cand_rows if lkeys[r] not in held][:300]
+    qs = pd.concat([qs, pd.DataFrame({"lrow": cand_rows, "key": lkeys[cand_rows], "panel": "TRAIN(seen)"})],
+                   ignore_index=True)
     raw = raw_peaks(lib["row"][qs.lrow.values])
     libs = list(lib["libs"])
-    z_of = {}
+    res = []
     for key, g in qs.groupby("key", sort=False):
+        if key not in row_of.index:
+            continue
+        pr = int(row_of[key])
+        y = np.unpackbits(np.asarray(fp_full[pr]), count=P.FULL_BITS)[bits].astype(np.float32)
         q = Query(key, [], [], [], [], [], [])
         for lr in g.lrow.values:
             a, b = lib["off"][lr], lib["off"][lr + 1]
-            q.mz.append(lib["mz"][a:b])
-            q.p.append(lib["p"][a:b])
-            q.adduct.append(L.ADDUCTS[lib["adduct_code"][lr]])
-            q.mode.append(int(lib["mode"][lr]))
-            q.prec.append(float(lib["prec_mz"][lr]))
-            q.ce.append(float(lib["ce"][lr]))
+            q.mz.append(lib["mz"][a:b]); q.p.append(lib["p"][a:b])
+            q.adduct.append(L.ADDUCTS[lib["adduct_code"][lr]]); q.mode.append(int(lib["mode"][lr]))
+            q.prec.append(float(lib["prec_mz"][lr])); q.ce.append(float(lib["ce"][lr]))
             mz, it = raw[int(lib["row"][lr])]
             env = libs[lib["lib_code"][lr]].startswith("enveda") and lib["mode"][lr] > 0
             q.raw.append((mz + (L.ENVEDA_POS_SHIFT if env else 0.0), it))
-        z_of[key] = P.fp_logits(q, fpm)
-    print("logits", len(z_of), f"{time.time() - T0:.0f}s", flush=True)
-
-    # candidate fingerprints: pool rows from the packed matrix, generated rows recomputed
-    gen = feats_df.pool_row.values < 0
-    gsmi = pd.unique(feats_df.smiles.values[gen])
-    gfp = {s: full_fp(s) for s in gsmi}
-    print("generated fingerprints", len(gfp), f"{time.time() - T0:.0f}s", flush=True)
-    fz = np.zeros(len(feats_df), np.float32)
-    zp = np.load(f"{ART}/fp_prior.npy") if os.path.exists(f"{ART}/fp_prior.npy") else None
-    fzn = np.zeros(len(feats_df), np.float32) if zp is not None else None
-    for (key, _), g in feats_df.groupby(["qkey", "regime"], sort=False):
-        z = z_of[key].astype(np.float32)
-        pr = g.pool_row.values
-        fps = np.stack([np.asarray(fp_full[r]) if r >= 0 else gfp[s] for r, s in zip(pr, g.smiles.values)])
-        y = np.unpackbits(fps, axis=1, count=P.FULL_BITS)[:, bits].astype(np.float32)
-        fz[g.index.values] = y @ z
-        if zp is not None:
-            fzn[g.index.values] = y @ (z - zp)
-    feats_df["fz"] = fz
-    grp = feats_df.groupby(["qkey", "regime"], sort=False).fz
-    feats_df["fp"] = feats_df.fz - grp.transform("max")
-    feats_df["fp_rank"] = grp.rank(ascending=False, method="min")
-    if fzn is not None:  # f·(z - z_prior): what the spectrum adds over the bit-frequency prior
-        feats_df["fzn"] = fzn
-        gn = feats_df.groupby(["qkey", "regime"], sort=False).fzn
-        feats_df["fp_norm"] = feats_df.fzn - gn.transform("max")
-        feats_df = feats_df.drop(columns=["fzn"])
-    print("f·z done", f"{time.time() - T0:.0f}s", flush=True)
-
-    f = R.prepare(feats_df.drop(columns=["fz"]), regimes=("C1", "C2"))
-    feats = R.feature_cols(f)
-    base = [c for c in feats if not c.startswith("fp")]
-    rep_fp = R.mrr_of(f, R.cv(f, feats))
-    rep_base = R.mrr_of(f, R.cv(f, base))
-    fz_only = R.mrr_of(f, f.fp.values + 1e-6 * np.random.default_rng(0).random(len(f)))
-    rep = rep_fp.merge(rep_base.rename(columns={"mrr": "mrr_nofp"}), on=["qkey", "regime", "panel"]) \
-                .merge(fz_only.rename(columns={"mrr": "mrr_fz_only"}), on=["qkey", "regime", "panel"])
-    print("=== VALIDATION (out of fold, molecules held out) ===")
-    print(R.report(rep, ("mrr", "mrr_nofp", "mrr_fz_only")), flush=True)
-    R.fit_save(f, feats, OUT)
-    shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
-    print("saved", sorted(os.listdir(OUT)), f"{time.time() - T0:.0f}s", flush=True)
+        lr0 = g.lrow.values[0]
+        single = M.logits(fpm["nets"], [M.prep_peaks(*q.raw[0], q.prec[0])], [q.prec[0]], [q.adduct[0]],
+                          [str(libs[lib["lib_code"][lr0]])], [0.0 if np.isnan(q.ce[0]) else q.ce[0]],
+                          [1.0 if q.mode[0] > 0 else 0.0], device=fpm["device"])[0]
+        zpipe = P.fp_logits(q, fpm)
+        # same-formula (same exact mass) candidates in the pool window
+        m = pool.exact_mass.values[pr]
+        lo, hi = np.searchsorted(pool.exact_mass.values, [m - 1e-4, m + 1e-4])
+        cand = np.arange(lo, hi)
+        Y = np.unpackbits(np.asarray(fp_full[cand]), axis=1, count=P.FULL_BITS)[:, bits].astype(np.float32)
+        out = {"key": key, "panel": g.panel.iloc[0], "n_iso": len(cand)}
+        for name, z in (("single", single), ("pipeline", zpipe)):
+            s = Y @ z
+            rank = 1 + int((s > s[cand == pr][0]).sum())
+            out[f"rr_{name}"] = 1.0 / rank
+            out[f"bce_{name}"] = bce(1 / (1 + np.exp(-z)), y)
+            sn = Y @ (z - zp)
+            out[f"rr_{name}_norm"] = 1.0 / (1 + int((sn > sn[cand == pr][0]).sum()))
+        out["bce_prior"] = bce(1 / (1 + np.exp(-zp)), y)
+        out["rr_random"] = float(np.mean(1.0 / np.arange(1, len(cand) + 1)))
+        res.append(out)
+    r = pd.DataFrame(res)
+    r = r[r.n_iso > 1]
+    pd.set_option("display.width", 200)
+    print("=== FP DIAGNOSTIC: held-out molecules, truth vs its same-formula pool isomers ===")
+    print(r.groupby("panel")[[c for c in r.columns if c.startswith(("rr_", "bce_"))]].mean().round(4))
+    print("n", r.groupby("panel").size().to_dict())
 
 
 if __name__ == "__main__":

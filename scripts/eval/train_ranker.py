@@ -1,6 +1,6 @@
 """LightGBM lambdarank over harness features (data/artifacts/eval/features.parquet); see casmi.rank.
 
-    PYTHONPATH=src python scripts/eval/train_ranker.py [--regimes=C1,C2,C3] [--train-panels=A,C] [--save]
+    PYTHONPATH=src python scripts/eval/train_ranker.py [--regimes=C1,C2,C3] [--train-panels=A,C] [--nogen] [--save]
 
 Out-of-fold scores are reported for every panel, but models are fit only on --train-panels
 (B, the synthetic-like enveda-180 panel, teaches library-provenance shortcuts).
@@ -25,7 +25,10 @@ def arg(name, default):
 
 def main():
     panels = arg("train-panels", ["A", "C"])
-    f = R.prepare(pd.read_parquet(EVAL / "features.parquet"), arg("regimes", ["C1", "C2", "C3"]))
+    raw = pd.read_parquet(EVAL / "features.parquet")
+    if "--nogen" in sys.argv:  # ranker for the generator-free submission (LB: generator costs 0.017)
+        raw = raw[raw.is_gen == 0]
+    f = R.prepare(raw, arg("regimes", ["C1", "C2"] if "--nogen" in sys.argv else ["C1", "C2", "C3"]))
     feats = R.feature_cols(f)
     oof = R.cv(f, feats, panels)
     heur = np.zeros(len(f))

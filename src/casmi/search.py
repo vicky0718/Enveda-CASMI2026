@@ -102,18 +102,23 @@ class Library:
             self.by_adduct[ADDUCTS[a]] = idx[np.argsort(self.neutral[idx])]
 
     def rows_of_keys(self, keys):
-        """Library rows of each structure key -> (rows, owner index into `keys`)."""
-        if not hasattr(self, "_key_order"):
-            self._key_order = np.argsort(self.key, kind="stable")
-            self._key_sorted = self.key[self._key_order]
-        keys = np.asarray(keys)
-        lo = np.searchsorted(self._key_sorted, keys, "left")
-        hi = np.searchsorted(self._key_sorted, keys, "right")
+        """Library rows of each structure key -> (rows, owner index into `keys`). Uses the integer key
+        codes (CSR over library rows sorted by code), not string search over 2 M rows."""
+        if not hasattr(self, "_code_off"):
+            kc = self.L["key_code"]
+            self._code_rows = np.argsort(kc, kind="stable")
+            self._code_off = np.concatenate([[0], np.cumsum(np.bincount(kc, minlength=len(self.L["keys"])))])
+        uk = self.L["keys"]
+        keys = np.asarray(keys).astype(uk.dtype)
+        pos = np.clip(np.searchsorted(uk, keys), 0, len(uk) - 1)
+        hit = uk[pos] == keys
+        lo = np.where(hit, self._code_off[pos], 0)
+        hi = np.where(hit, self._code_off[pos + 1], 0)
         n = hi - lo
         if n.sum() == 0:
             return np.zeros(0, np.int64), np.zeros(0, np.int64)
         owner = np.repeat(np.arange(len(keys)), n)
-        rows = self._key_order[np.concatenate([np.arange(a, b) for a, b in zip(lo, hi) if b > a])]
+        rows = self._code_rows[np.concatenate([np.arange(a, b) for a, b in zip(lo, hi) if b > a])]
         return rows.astype(np.int64), owner
 
     def candidates_for(self, adduct, m, max_shift=None):
