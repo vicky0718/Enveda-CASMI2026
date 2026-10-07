@@ -195,6 +195,10 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
                       "gen_rule": np.r_[np.full(len(cand), -1), gen.gen_rule.values if ng else []],
                       "gen_absdelta": np.r_[np.zeros(len(cand)), gen.gen_absdelta.values if ng else []],
                       "analog_w": a_w, "analog_ap": a_ap, "analog_ap_w": a_ap_w, "ap_tmax": ap_tmax})
+    is_pc = np.r_[np.zeros(len(cand)), gen.is_pc.values.astype(float) if ng and "is_pc" in gen.columns
+                  else np.zeros(ng)]
+    f["is_pc"] = is_pc
+    f["is_gen"] = np.r_[np.zeros(len(cand)), np.ones(ng)] * (1 - is_pc)
     for k, v in query_info(q, hh).items():
         f[k] = v
     f["smiles"] = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng \
@@ -213,6 +217,10 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         f["frag_disc"] = frag_disc
     if pool.pop is not None:
         add_pop(f, pool.pop)
+        if ng and "pc_pop" in gen.columns:  # PubChem candidates carry their own popularity
+            f.loc[f.is_pc.values == 1, "pop"] = gen.loc[gen.is_pc == 1, "pc_pop"].values
+            f["pop_gap"] = f["pop"] - f["pop"].max()
+            f["pop_rk"] = f["pop"].rank(ascending=False, method="min")
     return add_relative(f)
 
 
@@ -306,7 +314,13 @@ def load_keycache(art):
     return dict(zip(k.smiles, k.metric_key))
 
 
-def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=None, use_gen=False, log=print):
+def pc_gate(h, threshold):
+    """Admit PubChem candidates only when the library evidence is weak (best hit similarity below τ)."""
+    return threshold is None or (h.sim.max() if len(h) else 0.0) < threshold
+
+
+def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=None, use_gen=False, log=print,
+        pubchem=None, pc_top_n=10, pc_gate_tau=None):
     rows = []
     qs = queries_from_test(test)
     for i, q in enumerate(qs):
@@ -318,6 +332,13 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
             h = analog_hits(q, lib, top=600)  # must match the harness the ranker was trained on
             z = fp_logits(q, fp_models)
             gen = generate(q, pool, h, cand_keys=pool.key[cand]) if use_gen else None
+            if pubchem is not None and pc_gate(h, pc_gate_tau):
+                from .pubchem import pubchem_candidates
+                pcs = pubchem_candidates(q, pubchem, set(pool.key[cand]) | set([] if gen is None else gen.key),
+                                         top_n=pc_top_n)
+                if len(pcs):
+                    gen = pcs if gen is None else pd.concat([gen.assign(is_pc=0, pc_pop=np.nan), pcs],
+                                                            ignore_index=True)
             smiles = list(pool.df.smiles.values[cand]) + ([] if gen is None else list(gen.smiles))
             masses = np.r_[pool.mass[cand], [] if gen is None else gen.mass.values]
             FM, pw = frag_matrix(smiles, q)

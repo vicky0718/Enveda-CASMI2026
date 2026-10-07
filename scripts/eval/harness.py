@@ -191,20 +191,25 @@ def _score_job(key):
     truth = {key, _G["ik_of"].get(key, key)}
     _FRAG_ROWS.clear()  # memo is per molecule (pool candidates recur across the three regimes)
     res, feats, gens = [], [], {}
-    for regime in ("C1", "C2", "C3"):
+    pc_mode = _G.get("pc") is not None  # PubChem experiment: no generator; regimes C1, C2, C2P
+    for regime in (("C1", "C2", "C2P") if pc_mode else ("C1", "C2", "C3")):
         same = h.key.values == key
         excl = same & (h.ref_lib.values == _G["src_of"][key]) if regime == "C1" else same
         hh = h[~excl]
         tr_rows = _G["truth_rows"].get(key, np.zeros(0, np.int64))
         excl_rows = tr_rows[lib.L["lib_code"][tr_rows] == _G["src_of"][key]] if regime == "C1" else tr_rows
-        keep = ~np.isin(pool.key[cand_all], list(truth)) if regime == "C3" else np.ones(len(cand_all), bool)
+        keep = ~np.isin(pool.key[cand_all], list(truth)) if regime in ("C3", "C2P") else np.ones(len(cand_all), bool)
         cand = cand_all[keep]
-        gkey = "C1" if regime == "C1" else "C23"
-        if gkey not in gens:
-            gens[gkey] = P.generate(q, pool, hh, cand_keys=pool.key[cand_all])
-        gen = gens[gkey]
-        if regime == "C3":  # the truth is not in the pool: generated copies of it must stay
-            gen = P.generate(q, pool, hh, cand_keys=pool.key[cand])
+        if pc_mode:  # C2P: the truth is only in PubChem (removed from our pool), so it may come back as a PC row
+            from casmi.pubchem import pubchem_candidates
+            gen = pubchem_candidates(q, _G["pc"], set(pool.key[cand]), top_n=_G["pc_n"])
+        else:
+            gkey = "C1" if regime == "C1" else "C23"
+            if gkey not in gens:
+                gens[gkey] = P.generate(q, pool, hh, cand_keys=pool.key[cand_all])
+            gen = gens[gkey]
+            if regime == "C3":  # the truth is not in the pool: generated copies of it must stay
+                gen = P.generate(q, pool, hh, cand_keys=pool.key[cand])
         # fragment matrix over pool + generated candidates (discriminative score needs the whole list)
         smi = list(pool.df.smiles.values[cand]) + list(gen.smiles)
         cm = np.r_[pool.mass[cand], gen.mass.values if len(gen) else []]
@@ -214,6 +219,8 @@ def _score_job(key):
         f = P.channel_scores(q, pool, lib, hh, cand, frag=fr, z=_G["z_of"].get(key), bits=_G["bits"], gen=gen,
                              excl_rows=excl_rows, frag_disc=fd)
         f["label"] = np.isin(f.key.values, list(truth)).astype(np.int8)
+        if pc_mode:
+            f["pc_rank"] = np.r_[np.full(len(cand), -1), np.arange(len(gen))]  # popularity rank in the window
         f["qkey"], f["regime"], f["panel"] = key, regime, g.panel.iloc[0]
         feats.append(f)
         ranked = list(dict.fromkeys(f.key.values[P.heuristic_rank(f)]))
@@ -241,6 +248,11 @@ def score():
     qk = list(_G["H"])
     rows, owner = lib.rows_of_keys(np.array(qk))
     _G["truth_rows"] = {qk[i]: rows[owner == i] for i in np.unique(owner)}
+    import os
+    if os.environ.get("HARNESS_PUBCHEM"):
+        from casmi.pubchem import PubChemTier
+        _G["pc"] = PubChemTier(os.environ["HARNESS_PUBCHEM"])
+        _G["pc_n"] = int(os.environ.get("HARNESS_PC_N", 30))
     t0 = time.time()
     res, feats = [], []
     _FRAG_ROWS.clear()
@@ -251,8 +263,9 @@ def score():
             if i % 300 == 0:
                 print(f"  score {i}/{len(_G['H'])} {time.time() - t0:.0f}s", flush=True)
     r = pd.DataFrame(res)
-    r.to_parquet(EVAL / "scores.parquet")
-    pd.concat(feats, ignore_index=True).to_parquet(EVAL / "features.parquet")
+    suffix = "_pc" if _G.get("pc") is not None else ""
+    r.to_parquet(EVAL / f"scores{suffix}.parquet")
+    pd.concat(feats, ignore_index=True).to_parquet(EVAL / f"features{suffix}.parquet")
     print(r.groupby(["panel", "regime"])[["mrr", "in_list", "n_cand", "n_gen"]].mean().round(4))
 
 

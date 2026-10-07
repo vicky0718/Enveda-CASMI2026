@@ -11,7 +11,8 @@ BASE_FEATS = ["direct", "direct_n", "analog", "analog_max", "tmax", "mass_err_pp
               "analog_top5", "t_wmean", "is_gen", "gen_sim", "gen_nsrc", "gen_steps", "gen_rule", "gen_absdelta",
               "analog_noself", "own_n", "own_sim", "own_neg", "frag_disc",
               "analog_w", "analog_ap", "analog_ap_w", "ap_tmax",
-              "q_nspec", "q_npeaks", "q_entropy", "q_best_hit", "q_best_direct", "q_pos", "q_reliable", "q_mass"]
+              "q_nspec", "q_npeaks", "q_entropy", "q_best_hit", "q_best_direct", "q_pos", "q_reliable", "q_mass",
+              "is_pc"]
 # Popularity is NOT a ranker feature: validation truths are library compounds, far better documented than
 # real class-2/3 answers (panel A: truth beats same-formula library isomers on popularity 96 % of the
 # time; panel B loses 0.085 when the ranker learns it). It is applied as a small tie-breaker instead,
