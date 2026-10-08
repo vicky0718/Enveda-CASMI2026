@@ -95,19 +95,42 @@ class Block(nn.Module):
         self.ff = nn.Sequential(nn.Linear(d, 4 * d), nn.GELU(), nn.Dropout(drop), nn.Linear(4 * d, d))
         self.drop = nn.Dropout(drop)
 
-    def forward(self, x, pad):
+    def forward(self, x, pad, bias=None):
         B, N, D = x.shape
         y = self.n1(x)
         q, k, v = self.qkv(y).view(B, N, 3, self.h, D // self.h).permute(2, 0, 3, 1, 4)
-        a = F.scaled_dot_product_attention(q, k, v, attn_mask=(~pad)[:, None, None, :])
+        mask = (~pad)[:, None, None, :]
+        if bias is not None:  # additive per-head bias from pairwise m/z differences; padded keys masked
+            mask = bias.to(q.dtype).masked_fill(pad[:, None, None, :], float("-inf"))
+        a = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         x = x + self.drop(self.o(a.transpose(1, 2).reshape(B, N, D)))
         return x + self.drop(self.ff(self.n2(x)))
 
 
+class PairBias(nn.Module):
+    """Per-layer, per-head attention bias from the m/z difference of every token pair (the global token
+    stands at the precursor m/z, so its row carries the neutral losses). Fragment-to-fragment losses
+    (sugars 162.053 / 146.058 / 132.042, CO vs C2H4, CH2, H2O, CO2 ...) become directly visible to
+    attention instead of having to be inferred from two absolute positions."""
+
+    def __init__(self, layers, heads, dim=32, hidden=32):
+        super().__init__()
+        self.layers, self.heads = layers, heads
+        self.emb = SinEmb(dim, lo=-2.0, hi=2.7)  # wavelengths 0.01 .. 500 Da
+        self.mlp = nn.Sequential(nn.Linear(dim, hidden), nn.GELU(), nn.Linear(hidden, layers * heads))
+
+    def forward(self, tok_mz):
+        d = (tok_mz[:, :, None] - tok_mz[:, None, :]).abs()  # (B, N, N)
+        b = self.mlp(self.emb(d))  # (B, N, N, L*H)
+        B, N = tok_mz.shape
+        return b.view(B, N, N, self.layers, self.heads).permute(3, 0, 4, 1, 2)  # (L, B, H, N, N)
+
+
 class FPNet(nn.Module):
-    def __init__(self, nbits, d=512, layers=6, heads=8, drop=0.1):
+    def __init__(self, nbits, d=512, layers=6, heads=8, drop=0.1, rel=False):
         super().__init__()
         self.d = d
+        self.pair = PairBias(layers, heads) if rel else None
         self.mz_emb = SinEmb(d)
         self.nl_emb = SinEmb(d)
         self.pk = nn.Linear(2 * d + 1, d)
@@ -127,8 +150,9 @@ class FPNet(nn.Module):
                                torch.log1p(prec).unsqueeze(-1) / 10.0], -1)) + self.ad(ad) + self.ins(ins)
         x = torch.cat([g.unsqueeze(1), p], 1)
         pad = torch.cat([torch.zeros(B, 1, dtype=torch.bool, device=pad.device), pad], 1)
-        for b in self.blocks:
-            x = b(x, pad)
+        bias = self.pair(torch.cat([prec[:, None], mz], 1).float()) if self.pair is not None else None
+        for i, b in enumerate(self.blocks):
+            x = b(x, pad, None if bias is None else bias[i])
         x = self.norm(x)
         msk = (~pad[:, 1:]).float().unsqueeze(-1)
         mean = (x[:, 1:] * msk).sum(1) / msk.sum(1).clamp(min=1)
@@ -138,7 +162,8 @@ class FPNet(nn.Module):
 def load(path, device="cpu"):
     """Load one of our own checkpoints ({model, nbits, d, layers}) with the tensor-only loader."""
     ck = torch.load(path, map_location="cpu", weights_only=True)
-    net = FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"])).to(device).eval()
+    net = FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]), rel=bool(ck.get("rel", False)))
+    net = net.to(device).eval()
     # keep the float32 sinusoidal tables built by the constructor (fp16 checkpoints destroy them)
     net.load_state_dict({k: v.float() for k, v in ck["model"].items() if not k.endswith(".inv")}, strict=False)
     return net
