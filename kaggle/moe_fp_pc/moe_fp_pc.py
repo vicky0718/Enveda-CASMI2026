@@ -81,6 +81,12 @@ def main():
     qs = pd.read_parquet(f"{EV}/queries.parquet")
     feats_df = pd.read_parquet(f"{EV}/features.parquet")
     feats_df = feats_df[feats_df.is_gen == 0].reset_index(drop=True)  # PubChem rows: is_gen 0, is_pc 1
+    if os.environ.get("DRY_N"):  # local dry run: a molecule subsample, random f·z (no FP model)
+        keep = feats_df.qkey.drop_duplicates().sample(int(os.environ["DRY_N"]), random_state=0)
+        feats_df = feats_df[feats_df.qkey.isin(keep)].reset_index(drop=True)
+        feats_df["fz"] = np.random.default_rng(0).normal(size=len(feats_df)).astype(np.float32)
+        feats_df["fzn"] = feats_df.fz
+        return evaluate_and_save(feats_df)
     print("rows", len(feats_df), "PubChem rows", int(feats_df.is_pc.sum()),
           feats_df.groupby("regime").qkey.nunique().to_dict(), flush=True)
     fp_full = np.load(f"{ART}/fp_full.npy", mmap_mode="r")
@@ -129,7 +135,10 @@ def main():
     if zp is not None:
         feats_df["fzn"] = fzn
     print("f·z done", f"{time.time() - T0:.0f}s", flush=True)
+    evaluate_and_save(feats_df)
 
+
+def evaluate_and_save(feats_df):
     def blended(f, s):
         out = np.empty(len(f))
         for _, g in f.groupby("grp", sort=False):
@@ -177,7 +186,8 @@ def main():
         print(f"weighted, PubChem-only share of test {s2p}:", w, flush=True)
     moe.fit_save(f_pc, OUT, names=["full"], stack=False, seeds=3)
     open(f"{OUT}/casmi26_models.txt", "w").write("V13: full ranker with FP, trained with PubChem rows\n")
-    shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
+    if FPN:
+        shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
     print("saved", sorted(os.listdir(OUT)), f"{time.time() - T0:.0f}s", flush=True)
 
 
