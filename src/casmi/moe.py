@@ -102,21 +102,23 @@ def cv(f: pd.DataFrame, panels=("A", "C")):
     return l1, meta
 
 
-def fit_save(f: pd.DataFrame, out_dir, panels=("A", "C")):
-    """Final models: experts fit on all data; meta-ranker fit on out-of-fold expert scores."""
-    names = list(CONFIG["experts"])
+def fit_save(f: pd.DataFrame, out_dir, panels=("A", "C"), names=None, stack=True):
+    """Final models: experts fit on all data; meta-ranker fit on out-of-fold expert scores.
+    names: the experts to fit (default all); stack=False skips the meta-ranker (inference = "full")."""
+    names = list(names or CONFIG["experts"])
     tr = f[f.panel.isin(panels)]
     spec = {"experts": {}, "config": CONFIG}
     for n in names:
         cols = expert_features(f, n)
         _fit(tr, cols, CONFIG["level1_rounds"]).save_model(f"{out_dir}/moe_{n}.txt")
         spec["experts"][n] = cols
-    l1, _ = cv(f, panels)
-    X2 = level2_frame(f, l1)
-    f2 = f[["grp", "label", "fold", "panel"]].join(X2)
-    cols2 = list(X2.columns)
-    _fit(f2[f2.panel.isin(panels)], cols2, CONFIG["level2_rounds"]).save_model(f"{out_dir}/moe_meta.txt")
-    spec["meta"] = cols2
+    if stack:
+        l1, _ = cv(f, panels)
+        X2 = level2_frame(f, l1)
+        f2 = f[["grp", "label", "fold", "panel"]].join(X2)
+        cols2 = list(X2.columns)
+        _fit(f2[f2.panel.isin(panels)], cols2, CONFIG["level2_rounds"]).save_model(f"{out_dir}/moe_meta.txt")
+        spec["meta"] = cols2
     with open(f"{out_dir}/moe.json", "w") as fh:
         json.dump(spec, fh)
 
@@ -130,9 +132,9 @@ def load(model_dir):
         return None
     spec = json.load(open(f"{model_dir}/moe.json"))
     experts = {n: (lgb.Booster(model_file=f"{model_dir}/moe_{n}.txt"), cols) for n, cols in spec["experts"].items()}
-    meta = lgb.Booster(model_file=f"{model_dir}/moe_meta.txt")
+    meta = lgb.Booster(model_file=f"{model_dir}/moe_meta.txt") if "meta" in spec else None
 
-    use = CONFIG.get("inference", "meta")
+    use = CONFIG.get("inference", "meta") if meta is not None else "full"
 
     def rank(f):
         f = f.assign(grp="q")

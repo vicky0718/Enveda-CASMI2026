@@ -102,7 +102,7 @@ def main():
     if pc_n:
         name = f"casmi26_submit_pc{pc_n}.ipynb"
     if "--moe" in sys.argv:
-        name = "casmi26_submit_moe.ipynb"
+        name = f"casmi26_submit_moe_pc{pc_n}.ipynb" if pc_n else "casmi26_submit_moe.ipynb"
     p = Path(__file__).with_name(name)
     p.write_text(json.dumps(nb, indent=1))
     print(p)

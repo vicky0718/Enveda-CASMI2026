@@ -193,7 +193,10 @@ def _score_job(key):
     res, feats, gens = [], [], {}
     pc_mode = _G.get("pc") is not None  # PubChem experiment: no generator; regimes C1, C2, C2P
     hard = _G.get("hard", False)        # stress test: C2H also removes the truth's close analogs
-    regimes = ("C1", "C2", "C2P") if pc_mode else (("C1", "C2", "C2H") if hard else ("C1", "C2", "C3"))
+    if pc_mode and hard:  # both: PubChem rows in every regime, incl. the analog-thinned one
+        regimes = ("C1", "C2", "C2H", "C2P")
+    else:
+        regimes = ("C1", "C2", "C2P") if pc_mode else (("C1", "C2", "C2H") if hard else ("C1", "C2", "C3"))
     near = set()
     if hard and key in pool.row_of_key.index:  # structures with ECFP4 Tanimoto >= 0.7 to the truth
         tr_row = int(pool.row_of_key[key])
@@ -217,7 +220,10 @@ def _score_job(key):
         cand = cand_all[keep]
         if pc_mode:  # C2P: the truth is only in PubChem (removed from our pool), so it may come back as a PC row
             from casmi.pubchem import pubchem_candidates
-            gen = pubchem_candidates(q, _G["pc"], set(pool.key[cand]), top_n=_G["pc_n"])
+            pkey = "C2P" if regime == "C2P" else "pool"  # C1/C2/C2H share the pool, hence the PubChem rows
+            if pkey not in gens:
+                gens[pkey] = pubchem_candidates(q, _G["pc"], set(pool.key[cand]), top_n=_G["pc_n"])
+            gen = gens[pkey]
         elif hard:
             gen = pd.DataFrame(columns=["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc", "gen_steps", "gen_rule",
                                         "gen_absdelta"])  # no generator in the stress test
@@ -282,7 +288,7 @@ def score():
             if i % 300 == 0:
                 print(f"  score {i}/{len(_G['H'])} {time.time() - t0:.0f}s", flush=True)
     r = pd.DataFrame(res)
-    suffix = "_pc" if _G.get("pc") is not None else ("_hard" if _G.get("hard") else "")
+    suffix = ("_hardpc" if _G.get("hard") else "_pc") if _G.get("pc") is not None else ("_hard" if _G.get("hard") else "")
     r.to_parquet(EVAL / f"scores{suffix}.parquet")
     pd.concat(feats, ignore_index=True).to_parquet(EVAL / f"features{suffix}.parquet")
     print(r.groupby(["panel", "regime"])[["mrr", "in_list", "n_cand", "n_gen"]].mean().round(4))
