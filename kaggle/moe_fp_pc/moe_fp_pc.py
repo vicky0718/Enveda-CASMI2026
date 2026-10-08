@@ -60,6 +60,12 @@ def raw_peaks(rows):
     return out
 
 
+def copy_fp(out):
+    """The FP model(s) next to the ranker for the submission notebook (fpnet*.pt are all loaded there)."""
+    for i, pth in enumerate(sorted(FPN)):
+        shutil.copy(pth, f"{out}/fpnet.pt" if len(FPN) == 1 else f"{out}/fpnet_{i}.pt")
+
+
 def _formula_of(smi):
     from rdkit import Chem
     from rdkit.Chem.rdMolDescriptors import CalcMolFormula
@@ -98,7 +104,13 @@ def main():
           feats_df.groupby("regime").qkey.nunique().to_dict(), flush=True)
     fp_full = np.load(f"{ART}/fp_full.npy", mmap_mode="r")
     bits = np.load(f"{ART}/fp_bits.npy")
-    fpm = P.load_fp_models(os.path.dirname(FPN[0]))
+    if len(FPN) > 1:  # several FP-training outputs attached: an ensemble (logits averaged over nets)
+        os.makedirs(f"{OUT}/fpbank", exist_ok=True)
+        for i, pth in enumerate(sorted(FPN)):
+            shutil.copy(pth, f"{OUT}/fpbank/fpnet_{i}.pt")
+        fpm = P.load_fp_models(f"{OUT}/fpbank")
+    else:
+        fpm = P.load_fp_models(os.path.dirname(FPN[0]))
     fpm["bits"] = bits
     print("fp nets", len(fpm["nets"]), "device", fpm["device"], f"{time.time() - T0:.0f}s", flush=True)
 
@@ -251,7 +263,7 @@ def evaluate_and_save(feats_df):
         moe.fit_save(frames[best], OUT, panels=("A", "B", "C"), names=["full"], stack=False, seeds=3)
         open(f"{OUT}/casmi26_models.txt", "w").write(best + "\n")
         if FPN:
-            shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
+            copy_fp(OUT)
         print("saved", sorted(os.listdir(OUT)), flush=True)
         return
     if best.endswith("no NP-likeness"):
@@ -260,7 +272,7 @@ def evaluate_and_save(feats_df):
     open(f"{OUT}/pc_budget.txt", "w").write(best + "\n")
     open(f"{OUT}/casmi26_models.txt", "w").write("V13: full ranker with FP, trained with PubChem rows\n")
     if FPN:
-        shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
+        copy_fp(OUT)
     print("saved", sorted(os.listdir(OUT)), f"{time.time() - T0:.0f}s", flush=True)
 
 
