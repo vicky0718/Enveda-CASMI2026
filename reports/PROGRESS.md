@@ -10,7 +10,7 @@
 | V8 (`-nogen` v2) | V5 + own-spectrum features + frag_disc + popularity tie-break + 600-hit fix | 13 min | **0.342** |
 | V10 (`-nogen` v4) | + edge-case features, fixed FP model, ranker trained without generator | 12 min | 0.335 |
 | V11 (`-pc`) | V10 features (no FP) + top-10 PubChem candidates, ungated | 22 min | 0.333 |
-| V12 (`-moe`) | multi-model system's all-evidence expert (FP incl.) trained with the analog-thinned regime C2H + timsTOF mass window (±5 ppm, centre −0.8) | — | _to fill_ |
+| V12 (`-moe`) | multi-model system's all-evidence expert (FP incl.) trained with the analog-thinned regime C2H + timsTOF mass window (±5 ppm, centre −0.8) | 20 min | 0.342 (= V8; predicted +0.01 is below the ±0.016 resolution) |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
 
