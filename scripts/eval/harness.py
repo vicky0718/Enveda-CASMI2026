@@ -22,7 +22,7 @@ import pandas as pd
 from casmi import library as L
 from casmi.paths import ROOT
 from casmi import pipeline as P
-from casmi.search import Library, Pool, Query, analog_hits
+from casmi.search import Library, Pool, Query, analog_hits, tanimoto
 
 ART = ROOT / "data" / "artifacts"
 EVAL = ART / "eval"
@@ -192,17 +192,35 @@ def _score_job(key):
     _FRAG_ROWS.clear()  # memo is per molecule (pool candidates recur across the three regimes)
     res, feats, gens = [], [], {}
     pc_mode = _G.get("pc") is not None  # PubChem experiment: no generator; regimes C1, C2, C2P
-    for regime in (("C1", "C2", "C2P") if pc_mode else ("C1", "C2", "C3")):
+    hard = _G.get("hard", False)        # stress test: C2H also removes the truth's close analogs
+    regimes = ("C1", "C2", "C2P") if pc_mode else (("C1", "C2", "C2H") if hard else ("C1", "C2", "C3"))
+    near = set()
+    if hard and key in pool.row_of_key.index:  # structures with ECFP4 Tanimoto >= 0.7 to the truth
+        tr_row = int(pool.row_of_key[key])
+        ks = np.unique(np.r_[h.key.values[h.pool_row.values >= 0], pool.key[cand_all]])
+        rows_k = pool.row_of_key.reindex(ks).values
+        ok = ~np.isnan(rows_k)
+        ks, rows_k = ks[ok], rows_k[ok].astype(int)
+        T = tanimoto(pool.ecfp4[[tr_row]], pool.ecfp4[rows_k])[0]
+        near = set(ks[(T >= 0.7) & (ks != key)])
+    for regime in regimes:
         same = h.key.values == key
         excl = same & (h.ref_lib.values == _G["src_of"][key]) if regime == "C1" else same
+        if regime == "C2H" and near:
+            excl = excl | np.isin(h.key.values, list(near))
         hh = h[~excl]
         tr_rows = _G["truth_rows"].get(key, np.zeros(0, np.int64))
         excl_rows = tr_rows[lib.L["lib_code"][tr_rows] == _G["src_of"][key]] if regime == "C1" else tr_rows
+        if regime == "C2H" and near:
+            excl_rows = np.r_[excl_rows, lib.rows_of_keys(np.array(sorted(near)))[0]]
         keep = ~np.isin(pool.key[cand_all], list(truth)) if regime in ("C3", "C2P") else np.ones(len(cand_all), bool)
         cand = cand_all[keep]
         if pc_mode:  # C2P: the truth is only in PubChem (removed from our pool), so it may come back as a PC row
             from casmi.pubchem import pubchem_candidates
             gen = pubchem_candidates(q, _G["pc"], set(pool.key[cand]), top_n=_G["pc_n"])
+        elif hard:
+            gen = pd.DataFrame(columns=["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc", "gen_steps", "gen_rule",
+                                        "gen_absdelta"])  # no generator in the stress test
         else:
             gkey = "C1" if regime == "C1" else "C23"
             if gkey not in gens:
@@ -249,6 +267,7 @@ def score():
     rows, owner = lib.rows_of_keys(np.array(qk))
     _G["truth_rows"] = {qk[i]: rows[owner == i] for i in np.unique(owner)}
     import os
+    _G["hard"] = bool(os.environ.get("HARNESS_HARD"))
     if os.environ.get("HARNESS_PUBCHEM"):
         from casmi.pubchem import PubChemTier
         _G["pc"] = PubChemTier(os.environ["HARNESS_PUBCHEM"])
@@ -263,7 +282,7 @@ def score():
             if i % 300 == 0:
                 print(f"  score {i}/{len(_G['H'])} {time.time() - t0:.0f}s", flush=True)
     r = pd.DataFrame(res)
-    suffix = "_pc" if _G.get("pc") is not None else ""
+    suffix = "_pc" if _G.get("pc") is not None else ("_hard" if _G.get("hard") else "")
     r.to_parquet(EVAL / f"scores{suffix}.parquet")
     pd.concat(feats, ignore_index=True).to_parquet(EVAL / f"features{suffix}.parquet")
     print(r.groupby(["panel", "regime"])[["mrr", "in_list", "n_cand", "n_gen"]].mean().round(4))
