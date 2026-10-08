@@ -63,7 +63,7 @@ def main():
     qs = pd.read_parquet(f"{EV}/queries.parquet")
     feats_df = pd.read_parquet(f"{EV}/features.parquet")
     # the submission runs without the generator (LB: it costs 0.017), so train / validate likewise
-    feats_df = feats_df[(feats_df.is_gen == 0) & feats_df.regime.isin(["C1", "C2"])].reset_index(drop=True)
+    feats_df = feats_df[(feats_df.is_gen == 0) & feats_df.regime.isin(["C1", "C2", "C2H"])].reset_index(drop=True)
     fp_full = np.load(f"{ART}/fp_full.npy", mmap_mode="r")
     bits = np.load(f"{ART}/fp_bits.npy")
     fpm = P.load_fp_models(os.path.dirname(FPN[0]))
@@ -117,7 +117,7 @@ def main():
         feats_df = feats_df.drop(columns=["fzn"])
     print("f·z done", f"{time.time() - T0:.0f}s", flush=True)
 
-    f = R.prepare(feats_df.drop(columns=["fz"]), regimes=("C1", "C2"))
+    f = R.prepare(feats_df.drop(columns=["fz"]), regimes=("C1", "C2", "C2H"))
     from casmi import moe
     l1, meta = moe.cv(f)
 
@@ -133,8 +133,9 @@ def main():
     pd.set_option("display.width", 200)
     print("=== MULTI-MODEL VALIDATION (out of fold, molecules held out, with FP) ===")
     print(tab.round(4).to_string())
-    print("weighted (0.16 C1 + 0.30 C2):", {k: {p: round(0.16 * tab.loc[k, (p, "C1")] + 0.30 * tab.loc[k, (p, "C2")], 4)
-                                              for p in "AC"} for k in tab.index}, flush=True)
+    print("weighted (0.16 C1 + 0.15 C2 + 0.15 C2H):",
+          {k: {p: round(0.16 * tab.loc[k, (p, "C1")] + 0.15 * tab.loc[k, (p, "C2")] + 0.15 * tab.loc[k, (p, "C2H")], 4)
+               for p in "AC"} for k in tab.index}, flush=True)
     moe.fit_save(f, OUT)
     open(f"{OUT}/casmi26_models.txt", "w").write("multi-model ranker with FP expert\n")
     shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
