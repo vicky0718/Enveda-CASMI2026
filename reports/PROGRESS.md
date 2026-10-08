@@ -7,7 +7,10 @@
 | V5 | library + analog propagation + MetFrag-lite, LightGBM ranker (NP panels A+C) | 16 min | **0.324** |
 | V6 | + class-3 analog-edit generator (top-20 analogs, 23 edits) | 12 min | not submitted |
 | V7 | generator with top-100 analogs, 37 edits (homologs, CH2↔C=O, methylenedioxy) | 17 min | **0.307** |
-| V8 (`-nogen`) | V5 + own-spectrum features + frag_disc + popularity tie-break + 600-hit fix | 13 min | _to fill_ |
+| V8 (`-nogen` v2) | V5 + own-spectrum features + frag_disc + popularity tie-break + 600-hit fix | 13 min | **0.342** |
+| V10 (`-nogen` v4) | + edge-case features, fixed FP model, ranker trained without generator | 12 min | 0.335 |
+| V11 (`-pc`) | V10 features (no FP) + top-10 PubChem candidates, ungated | 22 min | 0.333 |
+| V12 (`-moe`) | multi-model system's all-evidence expert (FP incl.) trained with the analog-thinned regime C2H + timsTOF mass window (±5 ppm, centre −0.8) | — | _to fill_ |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
 
@@ -70,3 +73,22 @@ f·z alone: A C2 0.211, C C2 0.122 (random ≈ 0.12 / 0.05); ranker with f·z vs
 weighted A 0.611 vs 0.612, C 0.402 vs 0.404 — neutral. Ranker capacity (31/63/15 leaves) within ±0.004.
 Decision: V7 stays the submission; run 3 (pure BCE, all panels held out) decides whether the FP
 channel is worth shipping.
+
+
+## Round: multi-model system + analog-thinned stress regime (C2H)
+
+LB V8/V10/V11 sit inside ±0.009 — resubmission noise is ±0.007, so +0.01 changes are invisible; only
+≥ 0.02 changes can be judged. Hypothesis: validation molecules have measured relatives (best analog Tanimoto
+≥ 0.7 for 24 % / 30 % of panels A / C), the ranker leans on analog propagation, real test molecules have
+fewer close relatives. Stress regime **C2H** additionally removes every library spectrum of the truth's
+close analogs (ECFP4 Tanimoto ≥ 0.7).
+
+| model (out of fold) | A C2 | A C2H | C C1 | C C2 | C C2H |
+|---|---|---|---|---|---|
+| current ranker (C1+C2, no FP) | 0.812 | 0.704 | 0.721 | 0.640 | 0.527 |
+| full expert with FP, trained with C2H | 0.839 | **0.777** | 0.715 | 0.646 | **0.595** |
+| stacked multi-model (library / analog / spectral / full + router) | 0.809 | 0.756 | 0.718 | 0.642 | 0.593 |
+| RRF of experts | 0.734 | 0.686 | 0.697 | 0.581 | 0.545 |
+
+Stacking/routing ties the all-evidence expert once FP and C2H are in training; RRF is worse. V12 ships the
+all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable).
