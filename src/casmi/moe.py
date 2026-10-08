@@ -37,6 +37,9 @@ CONFIG = {
     # precursor-mass windows (ppm half-width, centre offset of candidate − query in ppm): timsTOF truths sit at
     # −0.6 to −1.0 ppm with 95–99 % inside ±3 ppm; other instruments are wider and unbiased
     "mass_window": {"timsTOF": {"ppm": 5.0, "center_ppm": -0.8}, "default": {"ppm": 10.0, "center_ppm": 0.0}},
+    # which model ranks at inference: "full" (the all-evidence expert) or "meta" (stacked). With the FP expert
+    # and the analog-thinned regime C2H in training they tie on validation (C 0.300 / 0.300; A 0.391 vs 0.383)
+    "inference": "full",
     "level1_rounds": 300,
     "level2_rounds": 200,
 }
@@ -129,11 +132,18 @@ def load(model_dir):
     experts = {n: (lgb.Booster(model_file=f"{model_dir}/moe_{n}.txt"), cols) for n, cols in spec["experts"].items()}
     meta = lgb.Booster(model_file=f"{model_dir}/moe_meta.txt")
 
+    use = CONFIG.get("inference", "meta")
+
     def rank(f):
         f = f.assign(grp="q")
-        scores = {n: b.predict(f.reindex(columns=cols).astype(np.float32).values) for n, (b, cols) in experts.items()}
-        X2 = level2_frame(f, scores).reindex(columns=spec["meta"])
-        s = meta.predict(X2.astype(np.float32).values)
+        if use == "full":
+            b, cols = experts["full"]
+            s = b.predict(f.reindex(columns=cols).astype(np.float32).values)
+        else:
+            scores = {n: b.predict(f.reindex(columns=cols).astype(np.float32).values)
+                      for n, (b, cols) in experts.items()}
+            X2 = level2_frame(f, scores).reindex(columns=spec["meta"])
+            s = meta.predict(X2.astype(np.float32).values)
         if "pop" in f.columns:
             s = R.blend_pop(s, f["pop"].values)
         return np.argsort(-s, kind="stable")
