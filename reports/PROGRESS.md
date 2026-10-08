@@ -12,6 +12,7 @@
 | V11 (`-pc`) | V10 features (no FP) + top-10 PubChem candidates, ungated | 22 min | 0.333 |
 | V12 (`-moe`) | multi-model system's all-evidence expert (FP incl.) trained with the analog-thinned regime C2H + timsTOF mass window (±5 ppm, centre −0.8) | 20 min | 0.342 (= V8; predicted +0.01 is below the ±0.016 resolution) |
 | V13 (`-moe-pc`) | V12 + 100 most popular PubChem structures per mass window, ranked with f·z (full expert trained on C1/C2/C2H/C2P, 3 seeds); PubChem window follows the timsTOF window | 24 min | **0.372** |
+| V14 (`-moe-pc` v2) | V13 + NP-likeness feature | 25 min | 0.353 (−0.019 vs V13: validation gain did not transfer — like curated-DB flags, NP-likeness favours well-documented validation truths; feature dropped) |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
@@ -131,3 +132,4 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
 * **V14 validation with f·z** (`casmi26-moe-fp-pc` v2, CPU): with PubChem rows, NP-likeness on vs off —
   A C1 0.930→0.946, C2 0.827→0.834, C2H 0.791→0.789, C2P 0.812→0.827; C C1 0.690→0.704, C2 0.615→0.636,
   C2H 0.569→0.587, C2P 0.383→0.412; panel-C estimate (15 % PubChem-only) 0.345→0.358.
+* **V14 LB 0.353 < V13 0.372** → NP-likeness off (kept in code, not in the shipped feature set). Lesson, as the forum warned for membership flags: priors that separate known library NPs from distractors overstate on our panels.
