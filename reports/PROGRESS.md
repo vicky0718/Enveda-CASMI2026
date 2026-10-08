@@ -117,3 +117,14 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   (top-1 8 %, top-5 17 %) vs simulated panel C 32 % (top-1 14 %, top-5 23 %) — real novel molecules are
   rebuilt about as often (their best analog similarity is high, median 0.88). V7's loss came from mixing
   generated rows into class-1/2 lists, not from reach → gated merge prototype (`scripts/eval/merge_c3.py`).
+
+## Round: class-1 probe, NP-likeness (Oct 8, afternoon)
+
+* **Class-1 probe = 0.149** (V12 lists restricted to candidates with a direct library match): f1 × MRR1 ≈
+  0.16 × 0.93 — class 1 is at the library-search ceiling. V13's 0.372 = 0.149 (class 1) + 0.223 (classes
+  2+3, i.e. ~0.50 MRR on class 2 if class 3 ≈ 0). Every further point is class 2/3.
+* **NP-likeness** (Ertl, RDKit Contrib NP_Score; structure-intrinsic, no membership flag): truths median
+  1.08 (panel A 1.47) vs all candidates −0.58 — PubChem windows are mostly synthetic. Out of fold on the
+  V13 harness (no FP): A C1 0.932→0.946, C2H 0.772→0.798, C2P 0.815→0.840; C C1 0.682→0.703,
+  C2H 0.543→0.577, C2P 0.369→0.405 (panel C was selected on NP-likeness, so C overstates; A is not).
+  → V14 = V13 + NP-likeness.
