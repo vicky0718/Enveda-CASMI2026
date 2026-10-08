@@ -118,7 +118,9 @@ def main():
     # candidate fingerprints: pool rows from the packed matrix, PubChem rows recomputed from SMILES
     gen = feats_df.pool_row.values < 0
     gsmi = pd.unique(feats_df.smiles.values[gen])
-    gfp = {s: full_fp(s) for s in gsmi}
+    from multiprocessing import Pool as MP
+    with MP(os.cpu_count() or 4) as mp:
+        gfp = dict(zip(gsmi, mp.map(full_fp, list(gsmi), chunksize=256)))
     print("PubChem fingerprints", len(gfp), f"{time.time() - T0:.0f}s", flush=True)
     zp = np.load(f"{ART}/fp_prior.npy") if os.path.exists(f"{ART}/fp_prior.npy") else None
     fz = np.zeros(len(feats_df), np.float32)
@@ -154,13 +156,33 @@ def evaluate_and_save(feats_df):
     f_no["fold"] = f_no.qkey.map(folds).values
     cols = moe.expert_features(f_pc, "full")
     print("features", len(cols), flush=True)
+    # PubChem budgets: with pc_rank (popularity rank in the window) the top-n subsets of one harness run
+    # are exactly what a top-n channel would produce, so several budgets are compared on the same folds
+    variants = [("without PubChem rows", f_no)]
+    np_cols = [c for c in ("np_like", "np_like_gap", "np_like_rk") if c in f_pc.columns]
+    budgets = [None]
+    if "pc_rank" in feats_df.columns and feats_df.pc_rank.max() >= 150:
+        budgets = [n for n in (50, 100, 200, 300) if n <= feats_df.pc_rank.max() + 1]
+    for n in budgets:
+        if n is None:
+            variants.append(("with PubChem rows (V13)", f_pc))
+            continue
+        fb = feats_df[(feats_df.is_pc == 0) | (feats_df.pc_rank < n)]
+        fb = relative(R.prepare(fb, regimes=regimes))
+        fb["fold"] = fb.qkey.map(folds).values
+        variants.append((f"with PubChem top-{n}", fb))
     tabs = {}
     for name, f in (("FP alone (f·z), no PubChem", f_no), ("FP alone (f·z), with PubChem", f_pc)):
         rep = R.mrr_of(f, f.fz.values)
         tabs[name] = rep.groupby(["panel", "regime"]).mrr.mean()
         # top-1 among the window's candidates (forum's FPNet: 0.46-0.49 on np-examples)
         tabs[name + " top1"] = (rep.mrr == 1).groupby([rep.panel, rep.regime]).mean()
-    for name, f in (("without PubChem rows", f_no), ("with PubChem rows (V13)", f_pc)):
+    if np_cols:  # NP-likeness on/off at the V13 budget, same folds
+        f100 = dict(variants).get("with PubChem top-100", f_pc)
+        variants.append(("with PubChem top-100, no NP-likeness", f100))
+    frames = dict(variants)
+    for name, f in variants:
+        cols = [c for c in moe.expert_features(f_pc, "full") if not (name.endswith("no NP-likeness") and c in np_cols)]
         oof = np.zeros(len(f))
         for k in range(5):
             tr = f[(f.fold != k) & f.panel.isin(["A", "C"])]
@@ -184,7 +206,19 @@ def evaluate_and_save(feats_df):
                                                                                    + tab.loc[n].get((p, "C2H"), 0))
                           + s2p * tab.loc[n].get((p, "C2P"), 0), 4) for p in "AC"} for n in tab.index}
         print(f"weighted, PubChem-only share of test {s2p}:", w, flush=True)
-    moe.fit_save(f_pc, OUT, names=["full"], stack=False, seeds=3)
+    # keep the variant with the best panel-C estimate at a 15 % PubChem-only share (V13's LB gain implies
+    # roughly 10-15 % under the panel-C proxy)
+    def est(n, s2p=0.15):
+        t = tab.loc[n]
+        return (0.16 * t.get(("C", "C1"), 0) + (0.45 - s2p) / 2 * (t.get(("C", "C2"), 0) + t.get(("C", "C2H"), 0))
+                + s2p * t.get(("C", "C2P"), 0))
+    cand = [n for n, _ in variants if n != "without PubChem rows"]
+    best = max(cand, key=est)
+    print("chosen:", best, {n: round(est(n), 4) for n in cand}, flush=True)
+    if best.endswith("no NP-likeness"):
+        frames[best] = frames[best].drop(columns=np_cols)
+    moe.fit_save(frames[best], OUT, names=["full"], stack=False, seeds=3)
+    open(f"{OUT}/pc_budget.txt", "w").write(best + "\n")
     open(f"{OUT}/casmi26_models.txt", "w").write("V13: full ranker with FP, trained with PubChem rows\n")
     if FPN:
         shutil.copy(FPN[0], f"{OUT}/fpnet.pt")

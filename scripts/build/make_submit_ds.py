@@ -26,7 +26,7 @@ def main():
         shutil.copy(ROOT / "src" / "casmi" / f"{m}.py", OUT / f"code__{m}.py")
     pool = pd.read_parquet(ART / "pool" / "pool.parquet")
     pool[["key", "smiles", "exact_mass", "src"]].to_parquet(OUT / "pool.parquet")
-    for f in ("fp_full.npy", "fp_bits.npy", "pop.npy", "fp_prior.npy"):
+    for f in ("fp_full.npy", "fp_bits.npy", "pop.npy", "fp_prior.npy", "np.npy"):
         dst = OUT / f
         if not dst.exists() or dst.stat().st_mtime < (ART / "pool" / f).stat().st_mtime:
             shutil.copy(ART / "pool" / f, dst)

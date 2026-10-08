@@ -221,6 +221,9 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
             f.loc[f.is_pc.values == 1, "pop"] = gen.loc[gen.is_pc == 1, "pc_pop"].values
             f["pop_gap"] = f["pop"] - f["pop"].max()
             f["pop_rk"] = f["pop"].rank(ascending=False, method="min")
+    if getattr(pool, "np_like", None) is not None:  # NP-likeness: pool rows precomputed, new structures scored here
+        from .edge import np_like
+        f["np_like"] = np.r_[pool.np_like[cand], [np_like(s) for s in gen.smiles] if ng else []]
     return add_relative(f)
 
 
@@ -265,7 +268,7 @@ def own_spectrum_features(q: Query, lib: Library, ckeys, excl_rows=None, tol=0.0
 
 
 REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
-            "analog_noself", "own_sim", "frag_disc", "analog_w", "analog_ap", "analog_ap_w", "ap_tmax"]
+            "analog_noself", "own_sim", "frag_disc", "analog_w", "analog_ap", "analog_ap_w", "ap_tmax", "np_like"]
 
 
 def add_relative(f: pd.DataFrame) -> pd.DataFrame:

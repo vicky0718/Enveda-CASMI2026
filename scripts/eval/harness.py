@@ -289,6 +289,8 @@ def score():
                 print(f"  score {i}/{len(_G['H'])} {time.time() - t0:.0f}s", flush=True)
     r = pd.DataFrame(res)
     suffix = ("_hardpc" if _G.get("hard") else "_pc") if _G.get("pc") is not None else ("_hard" if _G.get("hard") else "")
+    if _G.get("pc") is not None and _G["pc_n"] != 100:
+        suffix += str(_G["pc_n"])
     r.to_parquet(EVAL / f"scores{suffix}.parquet")
     pd.concat(feats, ignore_index=True).to_parquet(EVAL / f"features{suffix}.parquet")
     print(r.groupby(["panel", "regime"])[["mrr", "in_list", "n_cand", "n_gen"]].mean().round(4))

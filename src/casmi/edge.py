@@ -79,3 +79,36 @@ def query_info(q, hits):
 def fp_prior_logits(bit_freq):
     p = np.clip(np.asarray(bit_freq, float), 1e-4, 1 - 1e-4)
     return np.log(p / (1 - p)).astype(np.float32)
+
+
+# --- natural-product likeness (Ertl et al. 2008; RDKit Contrib NP_Score, BSD) -------------------------
+# The test's molecules are natural products, whereas a PubChem mass window is mostly synthetic; NP-likeness
+# of the candidate structure separates the two without any database-membership flag.
+_NP = {}
+
+
+def _np_model():
+    if "m" not in _NP:
+        import os
+        import sys
+
+        from rdkit.Chem import RDConfig
+        sys.path.append(os.path.join(RDConfig.RDContribDir, "NP_Score"))
+        import npscorer
+        _NP["m"], _NP["f"] = npscorer.readNPModel(), npscorer.scoreMol
+    return _NP["m"], _NP["f"]
+
+
+def np_like(smiles):
+    """NP-likeness score (about -5 synthetic .. +5 natural product); NaN if the SMILES does not parse."""
+    import io
+    from contextlib import redirect_stderr
+    with redirect_stderr(io.StringIO()):  # the model reader prints to stderr
+        model, score = _np_model()
+    mol = Chem.MolFromSmiles(smiles) if isinstance(smiles, str) else None
+    if mol is None:
+        return float("nan")
+    try:
+        return float(score(mol, model))
+    except Exception:  # noqa: BLE001 — a scorer failure on one odd structure is just unknown
+        return float("nan")

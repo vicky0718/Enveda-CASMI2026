@@ -66,6 +66,7 @@ class Pool:
         self._e4 = None
         import os
         self.pop = np.load(f"{pool_dir}/pop.npy") if os.path.exists(f"{pool_dir}/pop.npy") else None
+        self.np_like = np.load(f"{pool_dir}/np.npy") if os.path.exists(f"{pool_dir}/np.npy") else None
 
     @property
     def ecfp4(self):
