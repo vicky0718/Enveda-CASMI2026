@@ -154,3 +154,6 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   validation lists keep strong analog evidence, the test's class 2 has less → LB decides.
   Ranker trained on A+B+C: A C2 0.822→0.843, C2H 0.773→0.788, C flat. → V15 = V13 + FP run 5
   (`kaggle/submit_r5`, PubChem top-200 = the saved model's training budget).
+* **FP ensemble runs 3+4+5** (`casmi26-moe-fp-pc-ens`): f·z alone A 0.370 / 0.260 (run 5 alone 0.397 / 0.272),
+  B 0.632, C 0.441 / 0.312; ranker estimates tie (0.346). Runs 3/4 dilute run 5 on panel A → not submitted;
+  V15 uses run 5 alone.
