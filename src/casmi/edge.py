@@ -88,14 +88,20 @@ _NP = {}
 
 
 def _np_model():
+    """(model, scorer) or (None, None) when the Contrib scorer is unavailable — the feature is then NaN
+    (unknown to the ranker) instead of an exception that would empty a molecule's list."""
     if "m" not in _NP:
-        import os
-        import sys
+        try:
+            import os
+            import sys
 
-        from rdkit.Chem import RDConfig
-        sys.path.append(os.path.join(RDConfig.RDContribDir, "NP_Score"))
-        import npscorer
-        _NP["m"], _NP["f"] = npscorer.readNPModel(), npscorer.scoreMol
+            from rdkit.Chem import RDConfig
+            sys.path.append(os.path.join(RDConfig.RDContribDir, "NP_Score"))
+            import npscorer
+            _NP["m"], _NP["f"] = npscorer.readNPModel(), npscorer.scoreMol
+        except Exception as e:  # noqa: BLE001
+            print("NP-likeness unavailable:", type(e).__name__, e)
+            _NP["m"], _NP["f"] = None, None
     return _NP["m"], _NP["f"]
 
 
@@ -106,7 +112,7 @@ def np_like(smiles):
     with redirect_stderr(io.StringIO()):  # the model reader prints to stderr
         model, score = _np_model()
     mol = Chem.MolFromSmiles(smiles) if isinstance(smiles, str) else None
-    if mol is None:
+    if mol is None or model is None:
         return float("nan")
     try:
         return float(score(mol, model))

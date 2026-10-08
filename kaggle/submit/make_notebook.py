@@ -46,6 +46,8 @@ if fpm is not None:
     fpm["bits"] = np.load(f"{ART}/fp_bits.npy")
     fpm["prior"] = np.load(f"{ART}/fp_prior.npy")  # for the prior-normalised f·z feature
 print("artifact files:", sorted(os.listdir(ART)))
+from casmi.edge import np_like
+print("NP-likeness check (flavone):", np_like("O=C1C=C(c2ccc(O)cc2)Oc2cc(O)cc(O)c21"), "| pool scores:", pool.np_like is not None)
 print("gen K:", getattr(P, "GEN_K_REFS", None), "| ranker:", "loaded" if ranker is not None else "NONE (heuristic)",
       "| fp models:", 0 if fpm is None else len(fpm["nets"]))
 USE_GEN = __USE_GEN__
