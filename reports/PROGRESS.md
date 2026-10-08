@@ -128,3 +128,6 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   V13 harness (no FP): A C1 0.932→0.946, C2H 0.772→0.798, C2P 0.815→0.840; C C1 0.682→0.703,
   C2H 0.543→0.577, C2P 0.369→0.405 (panel C was selected on NP-likeness, so C overstates; A is not).
   → V14 = V13 + NP-likeness.
+* **V14 validation with f·z** (`casmi26-moe-fp-pc` v2, CPU): with PubChem rows, NP-likeness on vs off —
+  A C1 0.930→0.946, C2 0.827→0.834, C2H 0.791→0.789, C2P 0.812→0.827; C C1 0.690→0.704, C2 0.615→0.636,
+  C2H 0.569→0.587, C2P 0.383→0.412; panel-C estimate (15 % PubChem-only) 0.345→0.358.
