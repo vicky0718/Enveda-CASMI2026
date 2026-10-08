@@ -122,10 +122,12 @@ def ion_formula_any(formula: str, adduct: str):
     return ion_formula(formula, adduct)
 
 
-def annotate(peak_mz, formula: str, adduct: str, ppm: float = 10.0, min_da: float = 0.002, cache=None):
+def annotate(peak_mz, formula: str, adduct: str, ppm: float = 10.0, min_da: float = 0.002, cache=None,
+             max_combos: int = 500_000):
     """Sub-formula of the precursor ion explaining each peak (nearest within max(ppm, min_da)).
     Returns (frag counts (n, len(ANNOT_ELS)) uint8 — all-zero row = unexplained, precursor ion counts
-    (len(ANNOT_ELS),) int32) or None when the formula / adduct cannot be enumerated."""
+    (len(ANNOT_ELS),) int32) or None when the formula / adduct cannot be enumerated. A sub-formula table can
+    reach ~1e6 rows: keep `cache` small (one formula at a time in training, one molecule at inference)."""
     key = (formula, adduct)
     if cache is not None and key in cache:
         sub = cache[key]
@@ -136,11 +138,11 @@ def annotate(peak_mz, formula: str, adduct: str, ppm: float = 10.0, min_da: floa
             io = None
         sub = None
         if io is not None and all(e in ANNOT_ELS for e in io[0]):
-            s = subformula_masses(*io)
+            s = subformula_masses(*io, max_combos=max_combos)
             if s is not None:
                 cols = [ANNOT_ELS.index(e) for e in s[2]]
-                comp = np.zeros((len(s[1]), len(ANNOT_ELS)), np.int32)
-                comp[:, cols] = s[1]
+                comp = np.zeros((len(s[1]), len(ANNOT_ELS)), np.uint8)
+                comp[:, cols] = np.clip(s[1], 0, 255)
                 pf = np.zeros(len(ANNOT_ELS), np.int32)
                 for e, n in io[0].items():
                     pf[ANNOT_ELS.index(e)] = n
@@ -154,7 +156,7 @@ def annotate(peak_mz, formula: str, adduct: str, ppm: float = 10.0, min_da: floa
     if len(mz) and len(sub[0]) > 1:
         err, idx = match_peaks(mz, sub[0], 0.05)
         hit = np.abs(err) <= np.maximum(mz * ppm * 1e-6, min_da)
-        out[hit] = np.clip(sub[1][idx[hit]], 0, 255)
+        out[hit] = sub[1][idx[hit]]
     return out, sub[2]
 
 

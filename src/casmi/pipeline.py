@@ -49,9 +49,6 @@ def load_fp_models(art, device=None):
     return {"nets": nets, "bits": None if bits is None else np.load(bits), "device": device}
 
 
-_ANN_CACHE = {}
-
-
 def formula_nets(fpm) -> bool:
     return fpm is not None and any(getattr(n, "formula", False) for n in fpm["nets"])
 
@@ -83,8 +80,9 @@ def fp_logits(q: Query, fpm, formulas=None):
     S = len(peaks)
     frags, pforms = [], []
     for fo in formulas:
+        cache = {}  # sub-formula tables can be large: one formula at a time
         for (mz, _), ad in zip(peaks, q.adduct):
-            an = annotate(mz, fo, ad, cache=_ANN_CACHE) if len(mz) else None
+            an = annotate(mz, fo, ad, cache=cache) if len(mz) else None
             frags.append(an[0] if an is not None else np.zeros((len(mz), M.N_ELS), np.uint8))
             pforms.append(an[1] if an is not None else np.zeros(M.N_ELS, np.int32))
     out = {}

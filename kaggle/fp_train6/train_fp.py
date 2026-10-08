@@ -53,7 +53,7 @@ import fpmodel as M  # noqa: E402
 REL = True
 FORMULA = True
 assert "formula" in M.FPNet.__init__.__code__.co_varnames, "fpmodel without formula inputs"
-_ANN = {}  # per-worker cache of sub-formula tables, keyed by (formula, adduct)
+
 MERGE_P = float(os.environ.get("FP_MERGE_P", 0.3))
 assert "rel" in M.FPNet.__init__.__code__.co_varnames, "fpmodel without PairBias"
 
@@ -92,11 +92,16 @@ def _rg(rg):
     FR = np.zeros((k, NP, M.N_ELS), np.uint8)
     PF = np.zeros((k, M.N_ELS), np.int16)
     forms, adds = tbl["molecular_formula"].to_pylist(), tbl["adduct"].to_pylist()
-    for j in range(k):
+    # spectra grouped by (formula, adduct): one sub-formula table in memory at a time (they reach ~1e6 rows)
+    order = sorted(range(k), key=lambda j: (str(forms[j]), str(adds[j])))
+    cache, ckey = {}, None
+    for j in order:
         a, b = off[j], off[j + 1]
         m, i = M.prep_peaks(fm[a:b] + shift[j], fi[a:b], prec[j])
         MZ[j, :len(m)], IT[j, :len(m)], NPK[j] = m, i, len(m)
-        an = Fm.annotate(m, forms[j], adds[j], cache=_ANN) if len(m) else None
+        if (forms[j], adds[j]) != ckey:
+            cache, ckey = {}, (forms[j], adds[j])
+        an = Fm.annotate(m, forms[j], adds[j], cache=cache) if len(m) else None
         if an is not None:
             FR[j, :len(m)], PF[j] = an[0], np.minimum(an[1], 32767)
     ad = np.array([M.ADDUCT_IX.get(a, M.ADDUCT_IX["<unk>"]) for a in tbl["adduct"].to_pylist()], np.int16)
