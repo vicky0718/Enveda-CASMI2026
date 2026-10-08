@@ -7,8 +7,11 @@ people's posts) and a flat comments table for analysis:
     leaderboard.json       public leaderboard + team members
     posts.parquet          one row per topic opener / comment / reply, with
                            author, votes, LB rank of the author's team (if any)
+    forum_dump.txt         every topic as readable text (newest activity first)
+    new_posts.md           digest of posts not seen in the previous scrape (daily refresh)
+    kernels_top.json       public notebooks of the competition (titles / votes / authors only)
 
-    python scripts/research/scrape_kaggle_forum.py
+    python scripts/research/scrape_kaggle_forum.py [--reuse]
 """
 
 import base64
@@ -111,7 +114,48 @@ def main(reuse: bool = False):
     return build()
 
 
+def _fmt(r):
+    head = f"## by {r.author_name} ({r.author_type}) lb_rank={r.lb_rank} {str(r.post_date)[:10]}" if r.kind == "topic" \
+        else f"{'    ' * r.depth}-- [{r.kind}] {r.author_name} ({r.author_type}) lb_rank={r.lb_rank} votes={r.votes}:"
+    pad = "" if r.kind == "topic" else "    " * r.depth
+    return head + "\n" + "\n".join(pad + line for line in (r.markdown or "").strip().splitlines())
+
+
+def dump(posts: pd.DataFrame, seen: set):
+    """forum_dump.txt (all topics, newest activity first) and new_posts.md (posts not seen before)."""
+    last = posts.groupby("topic_id").post_date.max().sort_values(ascending=False)
+    out = []
+    for tid in last.index:
+        g = posts[posts.topic_id == tid]
+        t = g[g.kind == "topic"].iloc[0] if (g.kind == "topic").any() else g.iloc[0]
+        out.append(f"######## TOPIC {tid} | votes={t.topic_votes} comments={t.topic_comments} | {t.topic_title}")
+        out += [_fmt(r) for r in g.itertuples()]
+        out.append("")
+    (OUT / "forum_dump.txt").write_text("\n".join(out))
+    new = posts[~posts.id.isin(seen)] if seen else posts.iloc[0:0]
+    lines = [f"# New forum posts since the previous scrape ({len(new)})", ""]
+    for tid, g in new.groupby("topic_id", sort=False):
+        lines.append(f"## {g.topic_title.iloc[0]} (topic {tid})")
+        lines += [_fmt(r) for r in g.itertuples()] + [""]
+    (OUT / "new_posts.md").write_text("\n".join(lines))
+    print(f"new posts since previous scrape: {len(new)} in {new.topic_id.nunique()} topics")
+
+
+def kernels():
+    """Public notebooks of the competition, most voted first (metadata only)."""
+    import subprocess
+    r = subprocess.run(["kaggle", "kernels", "list", "--competition", "enveda-CASMI26-molecule-id-mass-spectra",
+                        "--sort-by", "voteCount", "--page-size", "100", "--csv"], capture_output=True, text=True,
+                       timeout=300)
+    if r.returncode == 0 and r.stdout.strip():
+        import io
+        k = pd.read_csv(io.StringIO(r.stdout))
+        (OUT / "kernels_top.json").write_text(k.to_json(orient="records"))
+        print(f"public notebooks: {len(k)}")
+
+
 def build():
+    seen = set(pd.read_parquet(OUT / "posts.parquet").id.dropna()) if (OUT / "posts.parquet").exists() else set()
     lb = json.loads((OUT / "leaderboard.json").read_text())
     full = json.loads((OUT / "topics.json").read_text())
     teams = {t["teamId"]: t for t in lb["teams"]}
@@ -138,8 +182,13 @@ def build():
     posts["lb_rank"] = posts.author_username.map(lambda u: user_rank.get(u, (None,))[0])
     posts["lb_score"] = posts.author_username.map(lambda u: user_rank.get(u, (None, None))[1])
     posts["lb_team"] = posts.author_username.map(lambda u: user_rank.get(u, (None, None, None))[2])
+    dump(posts, seen)
     posts.to_parquet(OUT / "posts.parquet")
     print(f"posts: {len(posts)} rows; by top-100 users: {(posts.lb_rank <= 100).sum()}")
+    try:
+        kernels()
+    except Exception as e:  # the notebook list is optional
+        print("kernels list failed:", type(e).__name__, e)
 
 
 if __name__ == "__main__":
