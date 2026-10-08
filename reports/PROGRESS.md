@@ -133,3 +133,7 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   A C1 0.930→0.946, C2 0.827→0.834, C2H 0.791→0.789, C2P 0.812→0.827; C C1 0.690→0.704, C2 0.615→0.636,
   C2H 0.569→0.587, C2P 0.383→0.412; panel-C estimate (15 % PubChem-only) 0.345→0.358.
 * **V14 LB 0.353 < V13 0.372** → NP-likeness off (kept in code, not in the shipped feature set). Lesson, as the forum warned for membership flags: priors that separate known library NPs from distractors overstate on our panels.
+* **PubChem budget** (`casmi26-moe-fp-pc` v3, one top-300 harness, top-n subsets on the same folds, no NP):
+  panel-C estimate (15 % PubChem-only) top-50 0.341, top-100 0.346, top-200 0.346, top-300 0.344 — flat;
+  each extra reachable truth brings matching distractors. V13's top-100 stays; not worth a submission.
+  The decisive lever is isomer ranking (FP model runs 4/5, then formula-annotated peaks).
