@@ -337,7 +337,7 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
             if pubchem is not None and pc_gate(h, pc_gate_tau):
                 from .pubchem import pubchem_candidates
                 pcs = pubchem_candidates(q, pubchem, set(pool.key[cand]) | set([] if gen is None else gen.key),
-                                         top_n=pc_top_n)
+                                         top_n=pc_top_n, ppm=mw["ppm"], center_ppm=mw["center_ppm"])
                 if len(pcs):
                     gen = pcs if gen is None else pd.concat([gen.assign(is_pc=0, pc_pop=np.nan), pcs],
                                                             ignore_index=True)

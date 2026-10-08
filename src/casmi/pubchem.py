@@ -40,20 +40,21 @@ class PubChemTier:
             p = p + np.asarray(self.lpmid[rows], np.float32)
         return p
 
-    def window(self, m, ppm=10.0, min_da=0.002):
+    def window(self, m, ppm=10.0, min_da=0.002, center_ppm=0.0):
+        c = m * (1 + center_ppm * 1e-6)
         tol = max(m * ppm * 1e-6, min_da)
-        a, b = np.searchsorted(self.mass, [m - tol, m + tol])
+        a, b = np.searchsorted(self.mass, [c - tol, c + tol])
         return np.arange(a, b)
 
 
-def pubchem_candidates(q, tier: PubChemTier, pool_keys, top_n=10, ppm=10.0, min_pop=0.0):
+def pubchem_candidates(q, tier: PubChemTier, pool_keys, top_n=10, ppm=10.0, min_pop=0.0, center_ppm=0.0):
     """Top-N most popular PubChem structures in the mass window that are not pool members.
     Returns DataFrame(smiles, key, mass, fp, pc_pop) in the generator's layout (+ is_pc = 1)."""
     from rdkit import Chem
     from rdkit.Chem.Descriptors import ExactMolWt
 
     from .fp import full_fp
-    rows = tier.window(q.neutral_mass, ppm)
+    rows = tier.window(q.neutral_mass, ppm, center_ppm=center_ppm)
     cols = ["smiles", "key", "mass", "fp", "gen_sim", "gen_nsrc", "gen_steps", "gen_rule", "gen_absdelta", "pc_pop",
             "is_pc"]
     if len(rows) == 0:
