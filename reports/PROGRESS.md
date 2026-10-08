@@ -146,3 +146,5 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   0.1156 / 0.819. Held-out evaluation: `casmi26-moe-fp-pc-r4` (CPU).
 * **Weekly Kaggle GPU quota (30 h) exhausted** after runs 4/5 → run 6 (formula-annotated peaks; code and
   smoke test done) waits for the weekly reset; likely without PairBias, to spend the budget on epochs.
+* **Run 4 held out** (`casmi26-moe-fp-pc-r4`): f·z alone A MRR 0.305 / top-1 0.196 (run 3: 0.332 / 0.224), C 0.438 / 0.307 (run 3: 0.427 / 0.291); full ranker panel-C estimate 0.3462 (run 3: 0.3455) — a tie. PairBias is not worth its 25 % speed cost → run 6 = formula annotations without PairBias.
+* **Run 5** training curve: bit-prior init speeds early epochs (epoch 5 loss 0.1339 vs 0.1361), final 0.1206 / 0.802 after 10.6 epochs (PairBias slowness again); held-out evaluation `casmi26-moe-fp-pc-r5` running (also tests the ranker trained on A+B+C).

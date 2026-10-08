@@ -1,6 +1,6 @@
 """Train our spectrum -> fingerprint transformer (casmi.fpmodel.FPNet) on the competition train file.
 
-Run 6 = run 5 (PairBias, m/z jitter, bit-prior initialisation, merge augmentation, pure BCE) + formula-annotated
+Run 6 = run 5 without PairBias (m/z jitter, bit-prior initialisation, merge augmentation, pure BCE) + formula-annotated
 peaks (MIST-style): every peak carries the sub-formula of the precursor ion that explains it (formula.annotate,
 10 ppm / 2 mDa; unexplained = zeros) and the loss formula; the global token carries the precursor ion formula.
 At inference the formula is a candidate's: the model runs once per distinct candidate formula.
@@ -50,7 +50,7 @@ else:
     sys.path.insert(0, DS)
 import formula as Fm  # noqa: E402
 import fpmodel as M  # noqa: E402
-REL = True
+REL = False  # run 4 (PairBias) tied run 3 on held-out panels at 25 % lower speed: spend the budget on epochs
 FORMULA = True
 assert "formula" in M.FPNet.__init__.__code__.co_varnames, "fpmodel without formula inputs"
 
