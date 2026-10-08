@@ -61,8 +61,10 @@ if pcm and pcp and PC_N > 0:
 print("pubchem:", None if tier is None else f"{tier.n:,} structures, top {PC_N}")
 MASS_WINDOW = moe.CONFIG["mass_window"]["timsTOF"] if __TIMS_WINDOW__ else None  # test is 100 % timsTOF
 print("mass window:", MASS_WINDOW)
+DIRECT_ONLY = __DIRECT_ONLY__  # diagnostic probe: only candidates with a library spectrum (class 1 alone)
+print("direct only:", DIRECT_ONLY)
 rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=USE_GEN, pubchem=tier, pc_top_n=PC_N,
-             mass_window=MASS_WINDOW)
+             mass_window=MASS_WINDOW, direct_only=DIRECT_ONLY)
 print(f"ranked {len(rows)} molecules, {time.time() - T0:.0f}s")''',
     r'''from casmi.metric import candidate_key
 sub_ids = pd.read_csv(f"{COMP}/sample_submission.csv").molecule_id
@@ -91,8 +93,9 @@ def main():
     use_gen = "--nogen" not in sys.argv
     pc_n = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--pc=")), 0)
     tims = "--tims-window" in sys.argv
+    direct = "--direct-only" in sys.argv
     cells = [c.replace("__USE_GEN__", str(use_gen)).replace("__PC_N__", str(pc_n)).replace("__TIMS_WINDOW__", str(tims))
-             for c in CELLS]
+             .replace("__DIRECT_ONLY__", str(direct)) for c in CELLS]
     nb = {"cells": [{"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
                      "source": c.strip("\n").splitlines(keepends=True)} for c in cells],
           "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
@@ -103,6 +106,8 @@ def main():
         name = f"casmi26_submit_pc{pc_n}.ipynb"
     if "--moe" in sys.argv:
         name = f"casmi26_submit_moe_pc{pc_n}.ipynb" if pc_n else "casmi26_submit_moe.ipynb"
+    if direct:
+        name = name.replace(".ipynb", "_direct.ipynb")
     p = Path(__file__).with_name(name)
     p.write_text(json.dumps(nb, indent=1))
     print(p)

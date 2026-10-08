@@ -320,7 +320,7 @@ def pc_gate(h, threshold):
 
 
 def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=None, use_gen=False, log=print,
-        pubchem=None, pc_top_n=10, pc_gate_tau=None, mass_window=None):
+        pubchem=None, pc_top_n=10, pc_gate_tau=None, mass_window=None, direct_only=False):
     rows = []
     qs = queries_from_test(test)
     for i, q in enumerate(qs):
@@ -349,6 +349,8 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
                                frag_disc=frag_disc_score(FM, pw, masses),
                                z_prior=None if fp_models is None else fp_models.get("prior"))
             order = ranker(f) if ranker is not None else heuristic_rank(f)
+            if direct_only:  # diagnostic: keep candidates with a library spectrum (scores class 1 alone)
+                order = order[f.direct.values[order] > 0]
             rows.append((q.mid, list(f.smiles.values[order])))
         except Exception as e:  # one bad molecule must never sink the file
             log(f"  {q.mid}: {type(e).__name__}: {e}")
