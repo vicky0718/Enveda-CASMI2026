@@ -126,11 +126,21 @@ class PairBias(nn.Module):
         return b.view(B, N, N, self.layers, self.heads).permute(3, 0, 4, 1, 2)  # (L, B, H, N, N)
 
 
+# typical element counts, to scale formula vectors (order = formula.ANNOT_ELS: C H N O P S F Cl Br I Na K)
+FORMULA_SCALE = (40.0, 80.0, 8.0, 20.0, 2.0, 3.0, 6.0, 3.0, 2.0, 2.0, 1.0, 1.0)
+N_ELS = len(FORMULA_SCALE)
+
+
 class FPNet(nn.Module):
-    def __init__(self, nbits, d=512, layers=6, heads=8, drop=0.1, rel=False):
+    def __init__(self, nbits, d=512, layers=6, heads=8, drop=0.1, rel=False, formula=False):
         super().__init__()
         self.d = d
         self.pair = PairBias(layers, heads) if rel else None
+        if formula:  # per peak: fragment sub-formula, loss formula, annotated flag; precursor formula on the global token
+            self.register_buffer("fscale", torch.tensor(FORMULA_SCALE))
+            self.fpeak = nn.Linear(2 * N_ELS + 1, d)
+            self.fprec = nn.Linear(N_ELS, d)
+        self.formula = formula
         self.mz_emb = SinEmb(d)
         self.nl_emb = SinEmb(d)
         self.pk = nn.Linear(2 * d + 1, d)
@@ -142,12 +152,20 @@ class FPNet(nn.Module):
         self.norm = nn.LayerNorm(d)
         self.head = nn.Sequential(nn.Linear(2 * d, 2048), nn.GELU(), nn.Dropout(drop), nn.Linear(2048, nbits))
 
-    def forward(self, mz, it, pad, prec, ad, ins, ce, mode):
+    def forward(self, mz, it, pad, prec, ad, ins, ce, mode, frag=None, pform=None):
+        """frag: (B, N, N_ELS) sub-formula counts per peak (zeros = unexplained); pform: (B, N_ELS) precursor
+        ion formula — both required when the model was built with formula=True."""
         B, N = mz.shape
         nl = (prec[:, None] - mz).clamp(min=0)
         p = self.pk(torch.cat([self.mz_emb(mz), self.nl_emb(nl), it.unsqueeze(-1)], -1))
         g = self.gl(torch.cat([self.prec_emb(prec), (ce / 100.0).unsqueeze(-1), mode.unsqueeze(-1),
                                torch.log1p(prec).unsqueeze(-1) / 10.0], -1)) + self.ad(ad) + self.ins(ins)
+        if self.formula:
+            fr, pf = frag.float(), pform.float()
+            ann = (fr.sum(-1, keepdim=True) > 0).float()
+            loss = (pf[:, None, :] - fr) * ann  # neutral loss formula of annotated peaks
+            p = p + self.fpeak(torch.cat([fr / self.fscale, loss / self.fscale, ann], -1))
+            g = g + self.fprec(pf / self.fscale)
         x = torch.cat([g.unsqueeze(1), p], 1)
         pad = torch.cat([torch.zeros(B, 1, dtype=torch.bool, device=pad.device), pad], 1)
         bias = self.pair(torch.cat([prec[:, None], mz], 1).float()) if self.pair is not None else None
@@ -162,7 +180,8 @@ class FPNet(nn.Module):
 def load(path, device="cpu"):
     """Load one of our own checkpoints ({model, nbits, d, layers}) with the tensor-only loader."""
     ck = torch.load(path, map_location="cpu", weights_only=True)
-    net = FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]), rel=bool(ck.get("rel", False)))
+    net = FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]), rel=bool(ck.get("rel", False)),
+                formula=bool(ck.get("formula", False)))
     net = net.to(device).eval()
     # keep the float32 sinusoidal tables built by the constructor (fp16 checkpoints destroy them)
     net.load_state_dict({k: v.float() for k, v in ck["model"].items() if not k.endswith(".inv")}, strict=False)
@@ -186,8 +205,9 @@ def merge_peaks(spectra):
 
 
 @torch.no_grad()
-def logits(nets, peak_lists, precs, adducts, instruments, ces, modes, device="cpu"):
-    """Mean logits over nets for a batch of (already prepared) peak lists."""
+def logits(nets, peak_lists, precs, adducts, instruments, ces, modes, device="cpu", frags=None, pforms=None):
+    """Mean logits over nets for a batch of (already prepared) peak lists. For formula models, frags is a list
+    of (n_peaks, N_ELS) annotation arrays aligned with the peak lists and pforms the precursor formulas."""
     B = len(peak_lists)
     N = max(1, max(len(a) for a, _ in peak_lists))
     mz = np.zeros((B, N), np.float32)
@@ -200,4 +220,10 @@ def logits(nets, peak_lists, precs, adducts, instruments, ces, modes, device="cp
     inp = (T(mz), T(it), T(pad, torch.bool), T(precs), T([ADDUCT_IX.get(a, ADDUCT_IX["<unk>"]) for a in adducts],
                                                         torch.long),
            T([instr_family(s) for s in instruments], torch.long), T(ces), T(modes))
-    return torch.stack([n(*inp).float() for n in nets]).mean(0).cpu().numpy()
+    extra = ()
+    if frags is not None:
+        fr = np.zeros((B, N, N_ELS), np.float32)
+        for r, a in enumerate(frags):
+            fr[r, :len(a)] = a
+        extra = (T(fr), T(np.asarray(pforms, np.float32)))
+    return torch.stack([n(*inp, *(extra if n.formula else ())).float() for n in nets]).mean(0).cpu().numpy()

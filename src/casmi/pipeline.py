@@ -33,12 +33,17 @@ def load_fp_models(art, device=None):
     nets = []
     for pth in paths:
         ck = torch.load(pth, map_location="cpu", weights_only=True)
-        net = M.FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]))
+        # architecture options travel with the checkpoint (run 4+: PairBias, run 6+: formula inputs)
+        net = M.FPNet(int(ck["nbits"]), d=int(ck["d"]), layers=int(ck["layers"]), rel=bool(ck.get("rel", False)),
+                      formula=bool(ck.get("formula", False)))
         # the sinusoidal m/z tables (SinEmb.inv) are deterministic and must stay float32: checkpoints are
         # saved in fp16, whose 3 significant digits turn a 628 rad/Da frequency into >100 rad of phase
         # error at m/z 500 — scrambling every high-resolution feature the model learned
         sd = {k: v.float() for k, v in ck["model"].items() if not k.endswith(".inv")}
-        net.load_state_dict(sd, strict=False)
+        missing, unexpected = net.load_state_dict(sd, strict=False)
+        bad = [k for k in missing if not k.endswith(".inv") and not k.endswith("fscale")] + list(unexpected)
+        if bad:  # only the deterministic tables may be absent; anything else is an architecture mismatch
+            raise RuntimeError(f"{pth}: checkpoint / architecture mismatch {bad[:5]}")
         nets.append(net.to(device).eval())
     bits = next((b for b in (f"{art}/fp_bits.npy", f"{art}/pool/fp_bits.npy") if os.path.exists(b)), None)
     return {"nets": nets, "bits": None if bits is None else np.load(bits), "device": device}

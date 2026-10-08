@@ -100,6 +100,64 @@ def match_peaks(peak_mz: np.ndarray, sub_mz: np.ndarray, tol_da: float):
     return err, best_i
 
 
+# --- peak annotation (sub-formula of the precursor ion for every peak) -----------------------------------
+ANNOT_ELS = ("C", "H", "N", "O", "P", "S", "F", "Cl", "Br", "I", "Na", "K")
+DIMERS = {"[2M+H]+": "[M+H]+", "[2M+Na]+": "[M+Na]+", "[2M+NH4]+": "[M+NH4]+", "[2M+K]+": "[M+K]+",
+          "[2M-H]-": "[M-H]-", "[2M+CH2O2-H]-": "[M+CH2O2-H]-"}
+
+
+def ion_formula_any(formula: str, adduct: str):
+    """ion_formula with dimer adducts ([2M+X]) handled by doubling the molecule and intrinsically charged
+    molecules ("C12H19N2O2+", adduct [M]+ / [M]-) taken as the ion itself."""
+    charge = formula[-1] if formula and formula[-1] in "+-" else ""
+    formula = formula.rstrip("+-")
+    if adduct in ("[M]+", "[M]-") or charge:
+        if adduct not in ("[M]+", "[M]-"):
+            return None
+        c = parse(formula)
+        return +c, (1 if adduct == "[M]+" else -1)
+    if adduct in DIMERS:
+        c = parse(formula)
+        return ion_formula("".join(f"{e}{2 * n}" for e, n in c.items()), DIMERS[adduct])
+    return ion_formula(formula, adduct)
+
+
+def annotate(peak_mz, formula: str, adduct: str, ppm: float = 10.0, min_da: float = 0.002, cache=None):
+    """Sub-formula of the precursor ion explaining each peak (nearest within max(ppm, min_da)).
+    Returns (frag counts (n, len(ANNOT_ELS)) uint8 — all-zero row = unexplained, precursor ion counts
+    (len(ANNOT_ELS),) int32) or None when the formula / adduct cannot be enumerated."""
+    key = (formula, adduct)
+    if cache is not None and key in cache:
+        sub = cache[key]
+    else:
+        try:
+            io = ion_formula_any(formula, adduct) if isinstance(formula, str) else None
+        except (ValueError, KeyError):
+            io = None
+        sub = None
+        if io is not None and all(e in ANNOT_ELS for e in io[0]):
+            s = subformula_masses(*io)
+            if s is not None:
+                cols = [ANNOT_ELS.index(e) for e in s[2]]
+                comp = np.zeros((len(s[1]), len(ANNOT_ELS)), np.int32)
+                comp[:, cols] = s[1]
+                pf = np.zeros(len(ANNOT_ELS), np.int32)
+                for e, n in io[0].items():
+                    pf[ANNOT_ELS.index(e)] = n
+                sub = (s[0], comp, pf)
+        if cache is not None:
+            cache[key] = sub
+    if sub is None:
+        return None
+    mz = np.asarray(peak_mz, float)
+    out = np.zeros((len(mz), len(ANNOT_ELS)), np.uint8)
+    if len(mz) and len(sub[0]) > 1:
+        err, idx = match_peaks(mz, sub[0], 0.05)
+        hit = np.abs(err) <= np.maximum(mz * ppm * 1e-6, min_da)
+        out[hit] = np.clip(sub[1][idx[hit]], 0, 255)
+    return out, sub[2]
+
+
 if __name__ == "__main__":
     # Hand-checked: caffeine C8H10N4O2, [M+H]+ = 195.08765 ; glucose [M-H]- = 179.05611
     c, z = ion_formula("C8H10N4O2", "[M+H]+")
