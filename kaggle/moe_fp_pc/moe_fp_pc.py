@@ -146,6 +146,11 @@ def main():
     cols = moe.expert_features(f_pc, "full")
     print("features", len(cols), flush=True)
     tabs = {}
+    for name, f in (("FP alone (f·z), no PubChem", f_no), ("FP alone (f·z), with PubChem", f_pc)):
+        rep = R.mrr_of(f, f.fz.values)
+        tabs[name] = rep.groupby(["panel", "regime"]).mrr.mean()
+        # top-1 among the window's candidates (forum's FPNet: 0.46-0.49 on np-examples)
+        tabs[name + " top1"] = (rep.mrr == 1).groupby([rep.panel, rep.regime]).mean()
     for name, f in (("without PubChem rows", f_no), ("with PubChem rows (V13)", f_pc)):
         oof = np.zeros(len(f))
         for k in range(5):
@@ -170,7 +175,7 @@ def main():
                                                                                    + tab.loc[n].get((p, "C2H"), 0))
                           + s2p * tab.loc[n].get((p, "C2P"), 0), 4) for p in "AC"} for n in tab.index}
         print(f"weighted, PubChem-only share of test {s2p}:", w, flush=True)
-    moe.fit_save(f_pc, OUT, names=["full"], stack=False)
+    moe.fit_save(f_pc, OUT, names=["full"], stack=False, seeds=3)
     open(f"{OUT}/casmi26_models.txt", "w").write("V13: full ranker with FP, trained with PubChem rows\n")
     shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
     print("saved", sorted(os.listdir(OUT)), f"{time.time() - T0:.0f}s", flush=True)

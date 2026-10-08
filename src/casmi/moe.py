@@ -102,15 +102,18 @@ def cv(f: pd.DataFrame, panels=("A", "C")):
     return l1, meta
 
 
-def fit_save(f: pd.DataFrame, out_dir, panels=("A", "C"), names=None, stack=True):
+def fit_save(f: pd.DataFrame, out_dir, panels=("A", "C"), names=None, stack=True, seeds=1):
     """Final models: experts fit on all data; meta-ranker fit on out-of-fold expert scores.
-    names: the experts to fit (default all); stack=False skips the meta-ranker (inference = "full")."""
+    names: the experts to fit (default all); stack=False skips the meta-ranker (inference = "full");
+    seeds > 1 adds moe_{expert}_s{k}.txt boosters whose scores are averaged at inference."""
     names = list(names or CONFIG["experts"])
     tr = f[f.panel.isin(panels)]
-    spec = {"experts": {}, "config": CONFIG}
+    spec = {"experts": {}, "config": CONFIG, "seeds": seeds}
     for n in names:
         cols = expert_features(f, n)
-        _fit(tr, cols, CONFIG["level1_rounds"]).save_model(f"{out_dir}/moe_{n}.txt")
+        for k in range(seeds):
+            _fit(tr, cols, CONFIG["level1_rounds"], seed=k).save_model(
+                f"{out_dir}/moe_{n}.txt" if k == 0 else f"{out_dir}/moe_{n}_s{k}.txt")
         spec["experts"][n] = cols
     if stack:
         l1, _ = cv(f, panels)
@@ -123,6 +126,16 @@ def fit_save(f: pd.DataFrame, out_dir, panels=("A", "C"), names=None, stack=True
         json.dump(spec, fh)
 
 
+class _Avg:
+    """Seed ensemble with a Booster-like predict."""
+
+    def __init__(self, boosters):
+        self.bs = boosters
+
+    def predict(self, x):
+        return np.mean([b.predict(x) for b in self.bs], 0)
+
+
 def load(model_dir):
     """Inference closure over one molecule's candidate frame -> ranking order (or None if absent)."""
     import os
@@ -131,7 +144,12 @@ def load(model_dir):
     if not os.path.exists(f"{model_dir}/moe.json"):
         return None
     spec = json.load(open(f"{model_dir}/moe.json"))
-    experts = {n: (lgb.Booster(model_file=f"{model_dir}/moe_{n}.txt"), cols) for n, cols in spec["experts"].items()}
+    def booster(n):
+        files = [f"{model_dir}/moe_{n}.txt"] + [f"{model_dir}/moe_{n}_s{k}.txt" for k in range(1, spec.get("seeds", 1))]
+        bs = [lgb.Booster(model_file=p) for p in files]
+        return _Avg(bs)
+
+    experts = {n: (booster(n), cols) for n, cols in spec["experts"].items()}
     meta = lgb.Booster(model_file=f"{model_dir}/moe_meta.txt") if "meta" in spec else None
 
     use = CONFIG.get("inference", "meta") if meta is not None else "full"
