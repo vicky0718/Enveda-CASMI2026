@@ -137,3 +137,12 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   panel-C estimate (15 % PubChem-only) top-50 0.341, top-100 0.346, top-200 0.346, top-300 0.344 — flat;
   each extra reachable truth brings matching distractors. V13's top-100 stays; not worth a submission.
   The decisive lever is isomer ranking (FP model runs 4/5, then formula-annotated peaks).
+
+## Round: FP runs 4–6 (Oct 8, evening)
+
+* **Run 4 (PairBias + m/z jitter) vs run 3** — training monitor (held-in structures, same-window decoys):
+  equal per epoch (epoch 10: loss 0.1218 vs 0.1190, top-1 0.800 vs 0.804), but PairBias is ~25 % slower
+  (1.90 vs 2.54 steps/s), so the 7.6 h budget gave 10.8 vs 14.4 epochs → final 0.1217 / 0.801 vs
+  0.1156 / 0.819. Held-out evaluation: `casmi26-moe-fp-pc-r4` (CPU).
+* **Weekly Kaggle GPU quota (30 h) exhausted** after runs 4/5 → run 6 (formula-annotated peaks; code and
+  smoke test done) waits for the weekly reset; likely without PairBias, to spend the budget on epochs.
