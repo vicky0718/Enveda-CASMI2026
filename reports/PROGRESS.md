@@ -92,3 +92,26 @@ close analogs (ECFP4 Tanimoto ≥ 0.7).
 
 Stacking/routing ties the all-evidence expert once FP and C2H are in training; RRF is worse. V12 ships the
 all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable).
+
+## Round: what the test's classes look like (Oct 8)
+
+* **Panel membership.** Panel A (host np-examples, the most test-like) is 99.2 % in COCONUT — already in our
+  pool; panel C 62 %; panel B 0.4 %. In PubChem (±5 ppm window, InChIKey14): A 99 %, B 97 %, C 76 %; the
+  truth's popularity rank in its PubChem window: A median 0 (top-10 for 87 %), C median 30, B ~6,500.
+* **V13 = PubChem top-100 (by popularity) in every list + f·z for every row** (`kaggle/moe_fp_pc`, out of
+  fold, 3-seed full expert):
+
+  | | A C1 | A C2 | A C2H | A C2P | C C1 | C C2 | C C2H | C C2P |
+  |---|---|---|---|---|---|---|---|---|
+  | without PubChem rows | 0.927 | 0.837 | 0.787 | 0 | 0.717 | 0.650 | 0.596 | 0 |
+  | with PubChem rows (V13) | 0.931 | 0.841 | 0.781 | **0.815** | 0.685 | 0.607 | 0.561 | **0.378** |
+
+  Panel A pays nothing for the extra rows; on panel C V13 breaks even at ~5.5 % PubChem-only test molecules.
+* **Our FP model alone** (f·z, pool window): top-1 A 0.224 / B 0.492 / C 0.291 (MRR 0.33 / 0.63 / 0.43);
+  the forum quotes 0.46–0.49 top-1 for the public FPNet on np-examples (candidate sets may differ) → FP run 4
+  (`kaggle/fp_train4`: pairwise m/z-difference attention bias) is training.
+* **Real novelty.** Panel N = 3,015 NP-like training structures absent from both PubChem and COCONUT
+  (`scripts/build/make_novel_panel.py`). Generator reach in C3 (`scripts/eval/novel_eval.py`): N 35 %
+  (top-1 8 %, top-5 17 %) vs simulated panel C 32 % (top-1 14 %, top-5 23 %) — real novel molecules are
+  rebuilt about as often (their best analog similarity is high, median 0.88). V7's loss came from mixing
+  generated rows into class-1/2 lists, not from reach → gated merge prototype (`scripts/eval/merge_c3.py`).
