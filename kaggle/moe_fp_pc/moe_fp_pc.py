@@ -60,6 +60,13 @@ def raw_peaks(rows):
     return out
 
 
+def _formula_of(smi):
+    from rdkit import Chem
+    from rdkit.Chem.rdMolDescriptors import CalcMolFormula
+    m = Chem.MolFromSmiles(smi)
+    return CalcMolFormula(m) if m is not None else None
+
+
 def relative(f):
     """Within-list relative features (pipeline.add_relative), vectorised over groups."""
     g = f.groupby("grp", sort=False)
@@ -97,6 +104,18 @@ def main():
 
     raw = raw_peaks(lib["row"][qs.lrow.values])
     libs = list(lib["libs"])
+    # formula models (run 6+): every candidate is scored under its own molecular formula
+    use_form = P.formula_nets(fpm)
+    if use_form:
+        from multiprocessing import Pool as MP
+        pool_form = pd.read_parquet(f"{ART}/pool.parquet", columns=["formula"]).formula.values
+        new = pd.unique(feats_df.smiles.values[feats_df.pool_row.values < 0])
+        with MP(os.cpu_count() or 4) as mp:
+            fmap = dict(zip(new, mp.map(_formula_of, list(new), chunksize=512)))
+        pr = feats_df.pool_row.values
+        feats_df["formula"] = [pool_form[r] if r >= 0 else fmap.get(sm) for r, sm in zip(pr, feats_df.smiles.values)]
+        forms_of = feats_df.groupby("qkey").formula.agg(lambda x: [v for v in pd.unique(x) if v])
+        print("candidate formulas per molecule", forms_of.str.len().describe().round(1).to_dict(), flush=True)
     z_of = {}
     for key, g in qs.groupby("key", sort=False):
         q = Query(key, [], [], [], [], [], [])
@@ -112,7 +131,7 @@ def main():
             env = libs[lib["lib_code"][lr]].startswith("enveda") and lib["mode"][lr] > 0
             q.raw.append((mz + (L.ENVEDA_POS_SHIFT if env else 0.0), it))
         q.instr = [M.INSTR_LIST[int(lib["instr"][lr])] for lr in g.lrow.values]  # true instrument
-        z_of[key] = P.fp_logits(q, fpm)
+        z_of[key] = P.fp_logits(q, fpm, formulas=forms_of.get(key, [])) if use_form else P.fp_logits(q, fpm)
     print("logits", len(z_of), f"{time.time() - T0:.0f}s", flush=True)
 
     # candidate fingerprints: pool rows from the packed matrix, PubChem rows recomputed from SMILES
@@ -126,13 +145,21 @@ def main():
     fz = np.zeros(len(feats_df), np.float32)
     fzn = np.zeros(len(feats_df), np.float32)
     for (key, _), g in feats_df.groupby(["qkey", "regime"], sort=False):
-        z = z_of[key].astype(np.float32)
         pr = g.pool_row.values
         fps = np.stack([np.asarray(fp_full[r]) if r >= 0 else gfp[s] for r, s in zip(pr, g.smiles.values)])
         y = np.unpackbits(fps, axis=1, count=P.FULL_BITS)[:, bits].astype(np.float32)
-        fz[g.index.values] = y @ z
-        if zp is not None:
-            fzn[g.index.values] = y @ (z - zp)
+        zk = z_of[key]
+        if isinstance(zk, dict):  # per-row logits by the candidate's formula
+            first = next(iter(zk.values()))
+            Z = np.stack([zk.get(fo, first) for fo in g.formula.values]).astype(np.float32)
+            fz[g.index.values] = (y * Z).sum(1)
+            if zp is not None:
+                fzn[g.index.values] = (y * (Z - zp)).sum(1)
+        else:
+            z = zk.astype(np.float32)
+            fz[g.index.values] = y @ z
+            if zp is not None:
+                fzn[g.index.values] = y @ (z - zp)
     feats_df["fz"] = fz
     if zp is not None:
         feats_df["fzn"] = fzn

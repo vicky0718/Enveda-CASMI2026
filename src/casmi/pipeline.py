@@ -49,20 +49,68 @@ def load_fp_models(art, device=None):
     return {"nets": nets, "bits": None if bits is None else np.load(bits), "device": device}
 
 
-def fp_logits(q: Query, fpm):
+_ANN_CACHE = {}
+
+
+def formula_nets(fpm) -> bool:
+    return fpm is not None and any(getattr(n, "formula", False) for n in fpm["nets"])
+
+
+def fp_logits(q: Query, fpm, formulas=None):
     """Reliability-weighted mean of per-spectrum logits. The merged-spectrum view is NOT used: the model
     was trained on single spectra and a merged peak list is out of distribution (held-out within-formula
-    MRR on public NPs 0.42 single vs 0.31 with the merged view averaged in)."""
+    MRR on public NPs 0.42 single vs 0.31 with the merged view averaged in).
+
+    Formula models (run 6+) read each peak's sub-formula of a candidate formula: with `formulas` given the
+    result is {formula: logits} (one forward pass per formula and spectrum, batched); without, only the
+    formula-free nets are used."""
     from . import fpmodel as M
+    from .formula import annotate
     if fpm is None or not q.raw:
         return None
     peaks = [M.prep_peaks(m, i, pm) for (m, i), pm in zip(q.raw, q.prec)]
     ces = [0.0 if np.isnan(c) else c for c in q.ce]
     modes = [1.0 if m > 0 else 0.0 for m in q.mode]
     instr = getattr(q, "instr", None) or ["timsTOF"] * len(peaks)  # test: all timsTOF; validation sets it
-    z = M.logits(fpm["nets"], peaks, list(q.prec), list(q.adduct), instr, ces, modes, device=fpm["device"])
     w = spectrum_weights(q)  # sparse / minor-adduct spectra count less
-    return (w[:, None] * z).sum(0)
+    if not formula_nets(fpm) or formulas is None:
+        nets = [n for n in fpm["nets"] if not getattr(n, "formula", False)]
+        if not nets:
+            return None
+        z = M.logits(nets, peaks, list(q.prec), list(q.adduct), instr, ces, modes, device=fpm["device"])
+        return (w[:, None] * z).sum(0)
+    formulas = list(dict.fromkeys(formulas))
+    S = len(peaks)
+    frags, pforms = [], []
+    for fo in formulas:
+        for (mz, _), ad in zip(peaks, q.adduct):
+            an = annotate(mz, fo, ad, cache=_ANN_CACHE) if len(mz) else None
+            frags.append(an[0] if an is not None else np.zeros((len(mz), M.N_ELS), np.uint8))
+            pforms.append(an[1] if an is not None else np.zeros(M.N_ELS, np.int32))
+    out = {}
+    B = 256
+    rep = lambda x: [v for _ in formulas for v in x]  # noqa: E731
+    allz = []
+    P_, PR, AD, IN, CE, MO = rep(peaks), rep(list(q.prec)), rep(list(q.adduct)), rep(instr), rep(ces), rep(modes)
+    for a in range(0, len(P_), B):
+        allz.append(M.logits(fpm["nets"], P_[a:a + B], PR[a:a + B], AD[a:a + B], IN[a:a + B], CE[a:a + B],
+                             MO[a:a + B], device=fpm["device"], frags=frags[a:a + B], pforms=pforms[a:a + B]))
+    allz = np.concatenate(allz)
+    for i, fo in enumerate(formulas):
+        out[fo] = (w[:, None] * allz[i * S:(i + 1) * S]).sum(0)
+    return out
+
+
+def candidate_formulas(pool: Pool, cand, gen=None):
+    """Molecular formula of every candidate row (pool rows from the pool table, others from SMILES)."""
+    from rdkit import Chem
+    from rdkit.Chem.rdMolDescriptors import CalcMolFormula
+    f = list(pool.df.formula.values[cand]) if "formula" in pool.df else [None] * len(cand)
+    if gen is not None and len(gen):
+        for smi in gen.smiles.values:
+            m = Chem.MolFromSmiles(smi)
+            f.append(CalcMolFormula(m) if m is not None else None)
+    return f
 
 
 def fp_scores(pool: Pool, cand, z, bits):
@@ -208,7 +256,18 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         f[k] = v
     f["smiles"] = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng \
         else pool.df.smiles.values[cand]
-    if z is not None and n:
+    if isinstance(z, dict) and n:  # formula model: every candidate scored under its own formula
+        forms = candidate_formulas(pool, cand, gen if ng else None)
+        y = np.unpackbits(cfp, axis=1, count=FULL_BITS)[:, bits].astype(np.float32)
+        zl = list(z.values())
+        Z = np.stack([z.get(fo, zl[0]) for fo in forms]).astype(np.float32)
+        fz = (y * Z).sum(1)
+        f["fp"] = fz - fz.max()
+        f["fp_rank"] = pd.Series(-fz).rank(method="min").values
+        if z_prior is not None:
+            fn = (y * (Z - z_prior)).sum(1)
+            f["fp_norm"] = fn - fn.max()
+    elif z is not None and n:
         y = np.unpackbits(cfp, axis=1, count=FULL_BITS)[:, bits].astype(np.float32)
         fz = y @ z.astype(np.float32)
         f["fp"] = fz - fz.max()
@@ -349,6 +408,9 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
                 if len(pcs):
                     gen = pcs if gen is None else pd.concat([gen.assign(is_pc=0, pc_pop=np.nan), pcs],
                                                             ignore_index=True)
+            if formula_nets(fp_models):  # formula model: one prediction per candidate formula
+                forms = [fo for fo in candidate_formulas(pool, cand, gen) if fo]
+                z = fp_logits(q, fp_models, formulas=forms) if forms else z
             smiles = list(pool.df.smiles.values[cand]) + ([] if gen is None else list(gen.smiles))
             masses = np.r_[pool.mass[cand], [] if gen is None else gen.mass.values]
             FM, pw = frag_matrix(smiles, q)
