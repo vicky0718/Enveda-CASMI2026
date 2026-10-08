@@ -73,9 +73,12 @@ class Pool:
             self._e4 = np.ascontiguousarray(self.fp[:, :ECFP4_BYTES])
         return self._e4
 
-    def window(self, m, ppm=10.0, min_da=0.002):
+    def window(self, m, ppm=10.0, min_da=0.002, center_ppm=0.0):
+        """Pool rows with exact mass within ±ppm of m·(1 + center_ppm·1e-6) (centre = known bias of the
+        instrument: timsTOF truths sit ~0.8 ppm below the measured neutral mass)."""
+        c = m * (1 + center_ppm * 1e-6)
         tol = max(m * ppm * 1e-6, min_da)
-        a, b = np.searchsorted(self.mass, [m - tol, m + tol])
+        a, b = np.searchsorted(self.mass, [c - tol, c + tol])
         return np.arange(a, b)
 
 

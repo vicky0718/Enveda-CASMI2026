@@ -39,7 +39,8 @@ mdl = glob.glob("/kaggle/input/**/casmi26_models.txt", recursive=True)
 fpn = glob.glob("/kaggle/input/**/fpnet.pt", recursive=True)
 MODEL = os.path.dirname(mdl[0]) if mdl else (os.path.dirname(fpn[0]) if fpn else ART)
 print("model dir", MODEL)
-ranker = P.load_ranker(MODEL)
+from casmi import moe
+ranker = moe.load(MODEL) or P.load_ranker(MODEL)  # multi-model ranker if present
 fpm = P.load_fp_models(MODEL)
 if fpm is not None:
     fpm["bits"] = np.load(f"{ART}/fp_bits.npy")
@@ -58,7 +59,10 @@ if pcm and pcp and PC_N > 0:
     from casmi.pubchem import PubChemTier
     tier = PubChemTier(os.path.dirname(pcm[0]), os.path.dirname(pcp[0]))
 print("pubchem:", None if tier is None else f"{tier.n:,} structures, top {PC_N}")
-rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=USE_GEN, pubchem=tier, pc_top_n=PC_N)
+MASS_WINDOW = moe.CONFIG["mass_window"]["timsTOF"] if __TIMS_WINDOW__ else None  # test is 100 % timsTOF
+print("mass window:", MASS_WINDOW)
+rows = P.run(test, pool, lib, ranker=ranker, fp_models=fpm, use_gen=USE_GEN, pubchem=tier, pc_top_n=PC_N,
+             mass_window=MASS_WINDOW)
 print(f"ranked {len(rows)} molecules, {time.time() - T0:.0f}s")''',
     r'''from casmi.metric import candidate_key
 sub_ids = pd.read_csv(f"{COMP}/sample_submission.csv").molecule_id
@@ -86,7 +90,9 @@ def main():
     import sys
     use_gen = "--nogen" not in sys.argv
     pc_n = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--pc=")), 0)
-    cells = [c.replace("__USE_GEN__", str(use_gen)).replace("__PC_N__", str(pc_n)) for c in CELLS]
+    tims = "--tims-window" in sys.argv
+    cells = [c.replace("__USE_GEN__", str(use_gen)).replace("__PC_N__", str(pc_n)).replace("__TIMS_WINDOW__", str(tims))
+             for c in CELLS]
     nb = {"cells": [{"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
                      "source": c.strip("\n").splitlines(keepends=True)} for c in cells],
           "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
@@ -95,6 +101,8 @@ def main():
     name = "casmi26_submit.ipynb" if use_gen else "casmi26_submit_nogen.ipynb"
     if pc_n:
         name = f"casmi26_submit_pc{pc_n}.ipynb"
+    if "--moe" in sys.argv:
+        name = "casmi26_submit_moe.ipynb"
     p = Path(__file__).with_name(name)
     p.write_text(json.dumps(nb, indent=1))
     print(p)

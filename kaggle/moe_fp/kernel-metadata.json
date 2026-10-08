@@ -1,0 +1,21 @@
+{
+  "id": "vigneshnehru/casmi26-moe-fp",
+  "title": "casmi26-moe-fp",
+  "code_file": "moe_fp.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "competition_sources": [
+    "enveda-CASMI26-molecule-id-mass-spectra"
+  ],
+  "dataset_sources": [
+    "vigneshnehru/casmi26-artifacts",
+    "vigneshnehru/casmi26-eval",
+    "metric/rdkit-2026-3-3-wheel"
+  ],
+  "kernel_sources": [
+    "vigneshnehru/casmi26-fpnet-train3"
+  ]
+}

@@ -320,12 +320,14 @@ def pc_gate(h, threshold):
 
 
 def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=None, use_gen=False, log=print,
-        pubchem=None, pc_top_n=10, pc_gate_tau=None):
+        pubchem=None, pc_top_n=10, pc_gate_tau=None, mass_window=None):
     rows = []
     qs = queries_from_test(test)
     for i, q in enumerate(qs):
         try:
-            cand = pool.window(q.neutral_mass) if q.mz else np.zeros(0, np.int64)
+            mw = mass_window or {"ppm": 10.0, "center_ppm": 0.0}  # test queries are timsTOF (moe.CONFIG)
+            cand = pool.window(q.neutral_mass, ppm=mw["ppm"], center_ppm=mw["center_ppm"]) if q.mz \
+                else np.zeros(0, np.int64)
             if len(cand) == 0:
                 rows.append((q.mid, []))
                 continue
