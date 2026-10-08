@@ -207,12 +207,17 @@ def evaluate_and_save(feats_df):
     if np_cols:  # NP-likeness on/off at the V13 budget, same folds
         f100 = dict(variants).get("with PubChem top-100", f_pc)
         variants.append(("with PubChem top-100, no NP-likeness", f100))
+    # ranker trained on all three panels (B = enveda-180 isomer lists) instead of A + C, V13 budget
+    base = dict(variants).get("with PubChem top-100", dict(variants).get("with PubChem rows (V13)"))
+    if base is not None:
+        variants.append(("V13 budget, ranker trained on A+B+C", base))
     frames = dict(variants)
     for name, f in variants:
+        train_panels = ["A", "B", "C"] if "A+B+C" in name else ["A", "C"]
         cols = [c for c in moe.expert_features(f_pc, "full") if not (name.endswith("no NP-likeness") and c in np_cols)]
         oof = np.zeros(len(f))
         for k in range(5):
-            tr = f[(f.fold != k) & f.panel.isin(["A", "C"])]
+            tr = f[(f.fold != k) & f.panel.isin(train_panels)]
             va = f[f.fold == k]
             oof[va.index] = moe._fit(tr, cols, moe.CONFIG["level1_rounds"]).predict(va[cols].astype(np.float32))
         rep = R.mrr_of(f, blended(f, oof))
@@ -242,6 +247,13 @@ def evaluate_and_save(feats_df):
     cand = [n for n, _ in variants if n != "without PubChem rows"]
     best = max(cand, key=est)
     print("chosen:", best, {n: round(est(n), 4) for n in cand}, flush=True)
+    if "A+B+C" in best:  # the final fit follows the chosen training panels
+        moe.fit_save(frames[best], OUT, panels=("A", "B", "C"), names=["full"], stack=False, seeds=3)
+        open(f"{OUT}/casmi26_models.txt", "w").write(best + "\n")
+        if FPN:
+            shutil.copy(FPN[0], f"{OUT}/fpnet.pt")
+        print("saved", sorted(os.listdir(OUT)), flush=True)
+        return
     if best.endswith("no NP-likeness"):
         frames[best] = frames[best].drop(columns=np_cols)
     moe.fit_save(frames[best], OUT, names=["full"], stack=False, seeds=3)
