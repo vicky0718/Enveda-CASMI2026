@@ -10,6 +10,7 @@
 import base64
 import json
 import os
+import re
 import ssl
 import sys
 import time
@@ -55,8 +56,12 @@ def output(ref, out_dir):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "log.txt").write_text(d.get("log") or "")
+    skip = os.environ.get("KAGGLE_OUT_SKIP")  # regex of output files to leave on Kaggle (e.g. large weights)
     for f in d.get("files", []):
         url = f.get("url")
+        if skip and re.search(skip, f["fileName"]):
+            print("skipped", f["fileName"], file=sys.stderr)
+            continue
         if url:
             with urllib.request.urlopen(urllib.request.Request(url), context=CTX, timeout=600) as r:
                 (out / f["fileName"]).write_bytes(r.read())
