@@ -43,8 +43,12 @@ from casmi import moe
 ranker = moe.load(MODEL) or P.load_ranker(MODEL)  # multi-model ranker if present
 fpm = P.load_fp_models(MODEL)
 if fpm is not None:
-    fpm["bits"] = np.load(f"{ART}/fp_bits.npy")
-    fpm["prior"] = np.load(f"{ART}/fp_prior.npy")  # for the prior-normalised f·z feature
+    # a model with its own bit index (e.g. a public checkpoint) ships fp_bits.npy next to the weights
+    fpm["bits"] = np.load(f"{MODEL}/fp_bits.npy" if os.path.exists(f"{MODEL}/fp_bits.npy") else f"{ART}/fp_bits.npy")
+    prior = np.load(f"{ART}/fp_prior.npy")  # for the prior-normalised f·z feature (our bit index only)
+    if len(prior) == len(fpm["bits"]):
+        fpm["prior"] = prior
+    print("FP bits:", len(fpm["bits"]), "| calibrated:", "calib" in fpm, "| prior:", "prior" in fpm)
 print("artifact files:", sorted(os.listdir(ART)))
 from casmi.edge import np_like
 print("NP-likeness check (flavone):", np_like("O=C1C=C(c2ccc(O)cc2)Oc2cc(O)cc(O)c21"), "| pool scores:", pool.np_like is not None)

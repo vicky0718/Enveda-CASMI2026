@@ -26,6 +26,15 @@ if whl:
 ART = os.path.dirname(glob.glob(f"{INP}/**/casmi26_artifacts.txt", recursive=True)[0])
 EV = os.path.dirname(glob.glob(f"{INP}/**/casmi26_eval.txt", recursive=True)[0])
 FPN = glob.glob(f"{INP}/**/fpnet.pt", recursive=True)
+PUBLIC = False
+_pub = glob.glob(f"{INP}/**/fp_single_s2.pt", recursive=True)
+if not FPN and _pub:  # public FPNet checkpoint (same architecture, own 6,930-bit index) as the FP model
+    _bits = glob.glob(f"{INP}/**/coconut-casmi26-candidates/**/fp_bits.npy", recursive=True) or \
+        [b for b in glob.glob(f"{INP}/**/fp_bits.npy", recursive=True) if "casmi26-artifacts" not in b]
+    os.makedirs(f"{OUT}/fppub", exist_ok=True)
+    shutil.copy(_pub[0], f"{OUT}/fppub/fpnet.pt")
+    shutil.copy(_bits[0], f"{OUT}/fppub/fp_bits.npy")
+    FPN, PUBLIC = [f"{OUT}/fppub/fpnet.pt"], True
 TRAIN = glob.glob(f"{INP}/**/train.parquet", recursive=True)[0]
 os.makedirs(f"{OUT}/code/casmi", exist_ok=True)
 for f in glob.glob(f"{ART}/code__*.py"):
@@ -133,6 +142,9 @@ def copy_fp(out):
     calibration fp_calib.npz written by calibrate() sits in the same directory)."""
     for i, pth in enumerate(sorted(FPN)):
         shutil.copy(pth, f"{out}/fpnet.pt" if len(FPN) == 1 else f"{out}/fpnet_{i}.pt")
+    b = f"{os.path.dirname(FPN[0])}/fp_bits.npy"
+    if os.path.exists(b):  # a model with its own bit index ships it next to the weights
+        shutil.copy(b, f"{out}/fp_bits.npy")
 
 
 def _formula_of(smi):
@@ -174,7 +186,9 @@ def main():
     print("rows", len(feats_df), "PubChem rows", int(feats_df.is_pc.sum()),
           feats_df.groupby("regime").qkey.nunique().to_dict(), flush=True)
     fp_full = np.load(f"{ART}/fp_full.npy", mmap_mode="r")
-    bits = np.load(f"{ART}/fp_bits.npy")
+    own_bits = f"{os.path.dirname(FPN[0])}/fp_bits.npy" if FPN else ""
+    bits = np.load(own_bits if os.path.exists(own_bits) else f"{ART}/fp_bits.npy", allow_pickle=False)
+    print("FP bit index:", len(bits), "public checkpoint" if PUBLIC else "", flush=True)
     if len(FPN) > 1:  # several FP-training outputs attached: an ensemble (logits averaged over nets)
         os.makedirs(f"{OUT}/fpbank", exist_ok=True)
         for i, pth in enumerate(sorted(FPN)):
@@ -216,7 +230,7 @@ def main():
         q.instr = [M.INSTR_LIST[int(lib["instr"][lr])] for lr in g.lrow.values]  # true instrument
         z_of[key] = P.fp_logits(q, fpm, formulas=forms_of.get(key, [])) if use_form else P.fp_logits(q, fpm)
     print("logits", len(z_of), f"{time.time() - T0:.0f}s", flush=True)
-    if CALIBRATE and not use_form:
+    if CALIBRATE and not use_form and not PUBLIC:  # a public model has seen the panels: no calibration on them
         z_of = calibrate(z_of, feats_df, fp_full, bits)
 
     # candidate fingerprints: pool rows from the packed matrix, PubChem rows recomputed from SMILES
@@ -227,6 +241,8 @@ def main():
         gfp = dict(zip(gsmi, mp.map(full_fp, list(gsmi), chunksize=256)))
     print("PubChem fingerprints", len(gfp), f"{time.time() - T0:.0f}s", flush=True)
     zp = np.load(f"{ART}/fp_prior.npy") if os.path.exists(f"{ART}/fp_prior.npy") else None
+    if zp is not None and len(zp) != len(bits):  # the prior belongs to our bit index
+        zp = None
     fz = np.zeros(len(feats_df), np.float32)
     fzn = np.zeros(len(feats_df), np.float32)
     for (key, _), g in feats_df.groupby(["qkey", "regime"], sort=False):
