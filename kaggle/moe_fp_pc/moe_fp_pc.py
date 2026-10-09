@@ -63,7 +63,54 @@ def raw_peaks(rows):
 USE_NP = False
 # the saved ranker: V13 budget (PubChem top-100), trained on every regime present (incl. C2X when there);
 # validation alone (est) has preferred variants the LB then rejected, so the choice is explicit
-FORCE = "V16a regimes, C2P halved"
+FORCE = "V13 budget, trained without C2PX"  # = V16a's regimes (C1 C2 C2H C2X C2P)
+CALIBRATE = True
+
+
+def fit_calib(Z, Y, l2=1.0, iters=30):
+    """Per-bit logistic regression y ~ sigmoid(a·z + c), all bits at once (Newton steps on the 2x2 systems),
+    L2 pull towards a = 1, c = 0. Z, Y: (molecules, bits)."""
+    a = np.ones(Z.shape[1])
+    c = np.zeros(Z.shape[1])
+    for _ in range(iters):
+        p = 1 / (1 + np.exp(-np.clip(a * Z + c, -30, 30)))
+        g_a = ((p - Y) * Z).sum(0) + l2 * (a - 1)
+        g_c = (p - Y).sum(0) + l2 * c
+        w = p * (1 - p)
+        h_aa = (w * Z * Z).sum(0) + l2
+        h_ac = (w * Z).sum(0)
+        h_cc = w.sum(0) + l2
+        det = h_aa * h_cc - h_ac ** 2
+        det = np.where(np.abs(det) < 1e-9, 1e-9, det)
+        # clipped Newton steps: from saturated starting points full steps overshoot
+        a -= np.clip((h_cc * g_a - h_ac * g_c) / det, -0.25, 0.25)
+        c -= np.clip((-h_ac * g_a + h_aa * g_c) / det, -1.0, 1.0)
+        a = np.clip(a, 0.0, 3.0)
+    return a, c
+
+
+def calibrate(z_of, feats_df, fp_full, bits):
+    """Cross-fitted per-bit calibration of the molecules' FP logits on their own truths (5 molecule folds:
+    a molecule's logits are calibrated with parameters fitted without it); the all-molecule fit is saved for
+    inference (fp_calib.npz)."""
+    tr = feats_df[(feats_df.label == 1) & (feats_df.pool_row >= 0)].drop_duplicates("qkey")
+    keys = [k for k in tr.qkey if k in z_of and z_of[k] is not None]
+    rows = tr.set_index("qkey").pool_row.reindex(keys).values.astype(int)
+    Y = np.unpackbits(np.asarray(fp_full[np.sort(rows)])[np.argsort(np.argsort(rows))], axis=1,
+                      count=P.FULL_BITS)[:, bits].astype(np.float64)
+    Z = np.stack([z_of[k] for k in keys]).astype(np.float64)
+    fold = np.random.default_rng(1).integers(0, 5, len(keys))
+    out = dict(z_of)
+    for k in range(5):
+        a, c = fit_calib(Z[fold != k], Y[fold != k])
+        for i in np.flatnonzero(fold == k):
+            out[keys[i]] = (a * Z[i] + c).astype(np.float32)
+    a, c = fit_calib(Z, Y)
+    np.savez(f"{OUT}/fp_calib.npz", a=a.astype(np.float32), c=c.astype(np.float32))
+    ll = lambda zz: float(np.mean(Y * zz - np.logaddexp(0, zz)))  # noqa: E731
+    print(f"per-bit calibration on {len(keys)} molecules: mean slope {a.mean():.3f}, "
+          f"mean log-lik raw {ll(Z):.4f} -> cross-fitted {ll(np.stack([out[k] for k in keys])):.4f}", flush=True)
+    return out
 
 
 def train_rows(f, name):
@@ -82,7 +129,8 @@ def train_rows(f, name):
 
 
 def copy_fp(out):
-    """The FP model(s) next to the ranker for the submission notebook (fpnet*.pt are all loaded there)."""
+    """The FP model(s) next to the ranker for the submission notebook (fpnet*.pt are all loaded there; the
+    calibration fp_calib.npz written by calibrate() sits in the same directory)."""
     for i, pth in enumerate(sorted(FPN)):
         shutil.copy(pth, f"{out}/fpnet.pt" if len(FPN) == 1 else f"{out}/fpnet_{i}.pt")
 
@@ -168,6 +216,8 @@ def main():
         q.instr = [M.INSTR_LIST[int(lib["instr"][lr])] for lr in g.lrow.values]  # true instrument
         z_of[key] = P.fp_logits(q, fpm, formulas=forms_of.get(key, [])) if use_form else P.fp_logits(q, fpm)
     print("logits", len(z_of), f"{time.time() - T0:.0f}s", flush=True)
+    if CALIBRATE and not use_form:
+        z_of = calibrate(z_of, feats_df, fp_full, bits)
 
     # candidate fingerprints: pool rows from the packed matrix, PubChem rows recomputed from SMILES
     gen = feats_df.pool_row.values < 0

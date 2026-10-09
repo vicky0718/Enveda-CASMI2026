@@ -46,7 +46,20 @@ def load_fp_models(art, device=None):
             raise RuntimeError(f"{pth}: checkpoint / architecture mismatch {bad[:5]}")
         nets.append(net.to(device).eval())
     bits = next((b for b in (f"{art}/fp_bits.npy", f"{art}/pool/fp_bits.npy") if os.path.exists(b)), None)
-    return {"nets": nets, "bits": None if bits is None else np.load(bits), "device": device}
+    out = {"nets": nets, "bits": None if bits is None else np.load(bits), "device": device}
+    if os.path.exists(f"{art}/fp_calib.npz"):  # per-bit logistic calibration z' = a·z + c (fit on held-out truths)
+        c = np.load(f"{art}/fp_calib.npz")
+        out["calib"] = (c["a"].astype(np.float32), c["c"].astype(np.float32))
+    return out
+
+
+def calibrate_logits(z, fpm):
+    if z is None or fpm is None or "calib" not in fpm:
+        return z
+    a, c = fpm["calib"]
+    if isinstance(z, dict):
+        return {k: a * v + c for k, v in z.items()}
+    return a * z + c
 
 
 def formula_nets(fpm) -> bool:
@@ -75,7 +88,7 @@ def fp_logits(q: Query, fpm, formulas=None):
         if not nets:
             return None
         z = M.logits(nets, peaks, list(q.prec), list(q.adduct), instr, ces, modes, device=fpm["device"])
-        return (w[:, None] * z).sum(0)
+        return calibrate_logits((w[:, None] * z).sum(0), fpm)
     formulas = list(dict.fromkeys(formulas))
     S = len(peaks)
     frags, pforms = [], []
@@ -96,7 +109,7 @@ def fp_logits(q: Query, fpm, formulas=None):
     allz = np.concatenate(allz)
     for i, fo in enumerate(formulas):
         out[fo] = (w[:, None] * allz[i * S:(i + 1) * S]).sum(0)
-    return out
+    return calibrate_logits(out, fpm)
 
 
 def candidate_formulas(pool: Pool, cand, gen=None):
