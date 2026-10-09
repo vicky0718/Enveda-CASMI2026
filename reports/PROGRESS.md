@@ -205,3 +205,7 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   (`scripts/thirdparty/eval_public_fp.py`): single A 0.407 / top-1 0.252, C 0.576 / 0.461; merged A 0.420 / 0.268,
   C 0.572 / 0.456 (ours: run 3 A 0.332 / 0.224, C 0.427 / 0.291; run 5 A 0.397 / 0.272, C 0.443 / 0.312). They were
   probably trained on all training structures (our panels included), so validation is optimistic → LB decides.
+* **V20 validation** (public FPNet as the FP model, ranker retrained with V16a's regimes; `casmi26-moe-fp-pc-pub`):
+  A C2 0.825 / C2H 0.768 / C2X 0.694 (V19: 0.836 / 0.802 / 0.731) — worse on the test-like panel; C C2 0.664 /
+  C2H 0.629 / C2X 0.613 (V19: 0.623 / 0.571 / 0.532) — much better where the public model has likely seen the
+  structures. Consistent with memorisation and a ranker that learns to over-trust it → V20 is an LB probe.
