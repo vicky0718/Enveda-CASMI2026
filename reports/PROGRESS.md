@@ -190,3 +190,7 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   Jaccard of the candidate sets 0.79, top-10 overlap 0.76, same first candidate 56 % — the popularity ranking
   differs (per-CID counts here; the third-party arrays likely aggregate stereo variants or count differently).
   Before it replaces the third-party datasets: match the popularity definition and check C2P coverage on the panels.
+* **Own NCBI PubChem tier v3** (popularity summed over CIDs sharing the InChIKey first block; 105,880,811 groups ≈
+  the third-party tier's 105,875,489 rows, i.e. that tier is one row per connectivity): truth coverage in the
+  ±5 ppm window, top-10 / 100 / 300 — A 0.960 / 0.984 / 0.984 (third-party 0.964 / 0.984 / 0.984), C 0.413 / 0.660
+  / 0.717 (0.427 / 0.657 / 0.717). `kaggle/submit_ncbi` = V19 with only our tier (no third-party datasets).
