@@ -172,3 +172,8 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   C2H 0.768→0.794, **C2X 0.586→0.730**; C C1 0.685→0.688, C2 0.605→0.618, C2H 0.559→0.572, **C2X 0.446→0.539**;
   run 5 FP: A C2X 0.595→0.747, C C2X 0.457→0.534. No regime gets worse. Submitted V16a (run 3) and V16b (run 5).
 * **LB: V16a 0.379 (best), V16b 0.364.** C2X training helps (+0.007 over V13, predicted direction). FP run 5 scored below run 3 in both paired comparisons (−0.013, −0.015; ~1.3σ combined) despite better validation → run 6 = run 3's recipe + formula annotations only (no PairBias / jitter / bit-prior / merge), so the LB isolates the formula change.
+* **C2PX** (truth only in PubChem + analogs ≥ 0.5 removed; heuristic MRR C 0.12): training the ranker with it
+  (`casmi26-moe-fp-pc` v6, run 3 FP) — A C2PX 0.563→0.737, C C2PX 0.229→0.334, C2P C 0.375→0.402; cost on
+  in-pool regimes ~0.02 (C C2 0.615→0.599, C2H 0.574→0.551, C2X 0.528→0.505; A C2H 0.797→0.775) because PubChem
+  rows are promoted more readily. Analog-poor estimate 0.16·C1 + (0.45−s)·C2X + s·C2PX: A +0.014…+0.032,
+  C +0.001…+0.013 for s = 0.1…0.2 → V17 = V16a + C2PX in training.
