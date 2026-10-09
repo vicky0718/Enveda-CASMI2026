@@ -27,10 +27,17 @@ def load_fp_models(art, device=None):
 
     from . import fpmodel as M
     paths = sorted(glob.glob(f"{art}/fpnet*.pt"))
-    if not paths:
+    dpaths = sorted(glob.glob(f"{art}/dreams_fp*.pt"))  # DreaMS-backbone fingerprint models (casmi.dreams_backbone)
+    if not paths and not dpaths:
         return None
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     nets = []
+    if dpaths:
+        from . import dreams_backbone as DB
+        for pth in dpaths:
+            net = DB.load_fp(pth, device)
+            net.formula = False
+            nets.append(net)
     for pth in paths:
         ck = torch.load(pth, map_location="cpu", weights_only=True)
         # architecture options travel with the checkpoint (run 4+: PairBias, run 6+: formula inputs)
@@ -83,12 +90,25 @@ def fp_logits(q: Query, fpm, formulas=None):
     modes = [1.0 if m > 0 else 0.0 for m in q.mode]
     instr = getattr(q, "instr", None) or ["timsTOF"] * len(peaks)  # test: all timsTOF; validation sets it
     w = spectrum_weights(q)  # sparse / minor-adduct spectra count less
+    dnets = [n for n in fpm["nets"] if getattr(n, "kind", None) == "dreams_fp"]
+    zd = None
+    if dnets:  # DreaMS models read the measured peaks with their own preprocessing
+        from . import dreams_backbone as DB
+        ad_ix = [M.ADDUCT_IX.get(a, M.ADDUCT_IX["<unk>"]) for a in q.adduct]
+        in_ix = [M.instr_family(s) for s in instr]
+        zd = np.mean([DB.fp_logits(n, list(q.raw), list(q.prec), ad_ix, in_ix, ces, modes) for n in dnets], 0)
+        zd = (w[:, None] * zd).sum(0)
     if not formula_nets(fpm) or formulas is None:
-        nets = [n for n in fpm["nets"] if not getattr(n, "formula", False)]
-        if not nets:
+        nets = [n for n in fpm["nets"] if not getattr(n, "formula", False) and n not in dnets]
+        if not nets and zd is None:
             return None
+        if not nets:
+            return calibrate_logits(zd, fpm)
         z = M.logits(nets, peaks, list(q.prec), list(q.adduct), instr, ces, modes, device=fpm["device"])
-        return calibrate_logits((w[:, None] * z).sum(0), fpm)
+        z = (w[:, None] * z).sum(0)
+        if zd is not None:  # equal weight per model
+            z = (len(nets) * z + len(dnets) * zd) / (len(nets) + len(dnets))
+        return calibrate_logits(z, fpm)
     formulas = list(dict.fromkeys(formulas))
     S = len(peaks)
     frags, pforms = [], []
@@ -104,11 +124,14 @@ def fp_logits(q: Query, fpm, formulas=None):
     allz = []
     P_, PR, AD, IN, CE, MO = rep(peaks), rep(list(q.prec)), rep(list(q.adduct)), rep(instr), rep(ces), rep(modes)
     for a in range(0, len(P_), B):
-        allz.append(M.logits(fpm["nets"], P_[a:a + B], PR[a:a + B], AD[a:a + B], IN[a:a + B], CE[a:a + B],
+        allz.append(M.logits([n for n in fpm["nets"] if n not in dnets], P_[a:a + B], PR[a:a + B], AD[a:a + B], IN[a:a + B], CE[a:a + B],
                              MO[a:a + B], device=fpm["device"], frags=frags[a:a + B], pforms=pforms[a:a + B]))
     allz = np.concatenate(allz)
+    nf = sum(1 for n in fpm["nets"] if n not in dnets)
     for i, fo in enumerate(formulas):
         out[fo] = (w[:, None] * allz[i * S:(i + 1) * S]).sum(0)
+        if zd is not None:
+            out[fo] = (nf * out[fo] + len(dnets) * zd) / (nf + len(dnets))
     return calibrate_logits(out, fpm)
 
 

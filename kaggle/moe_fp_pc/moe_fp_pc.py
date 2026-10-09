@@ -26,6 +26,7 @@ if whl:
 ART = os.path.dirname(glob.glob(f"{INP}/**/casmi26_artifacts.txt", recursive=True)[0])
 EV = os.path.dirname(glob.glob(f"{INP}/**/casmi26_eval.txt", recursive=True)[0])
 FPN = glob.glob(f"{INP}/**/fpnet.pt", recursive=True)
+DFP = glob.glob(f"{INP}/**/dreams_fp.pt", recursive=True)  # DreaMS-backbone FP models (casmi26-dreams-ft)
 PUBLIC = False
 _pub = glob.glob(f"{INP}/**/fp_single_s2.pt", recursive=True)
 if not FPN and _pub:  # public FPNet checkpoint (same architecture, own 6,930-bit index) as the FP model
@@ -40,7 +41,7 @@ os.makedirs(f"{OUT}/code/casmi", exist_ok=True)
 for f in glob.glob(f"{ART}/code__*.py"):
     shutil.copy(f, f"{OUT}/code/casmi/" + os.path.basename(f)[len("code__"):])
 sys.path.insert(0, f"{OUT}/code")
-print("artifacts", ART, "eval", EV, "fpnet", FPN, flush=True)
+print("artifacts", ART, "eval", EV, "fpnet", FPN, "dreams", DFP, flush=True)
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -142,8 +143,10 @@ def copy_fp(out):
     calibration fp_calib.npz written by calibrate() sits in the same directory)."""
     for i, pth in enumerate(sorted(FPN)):
         shutil.copy(pth, f"{out}/fpnet.pt" if len(FPN) == 1 else f"{out}/fpnet_{i}.pt")
-    b = f"{os.path.dirname(FPN[0])}/fp_bits.npy"
-    if os.path.exists(b):  # a model with its own bit index ships it next to the weights
+    for i, pth in enumerate(sorted(DFP)):
+        shutil.copy(pth, f"{out}/dreams_fp.pt" if len(DFP) == 1 else f"{out}/dreams_fp_{i}.pt")
+    b = f"{os.path.dirname(FPN[0])}/fp_bits.npy" if FPN else ""
+    if b and os.path.exists(b):  # a model with its own bit index ships it next to the weights
         shutil.copy(b, f"{out}/fp_bits.npy")
 
 
@@ -189,10 +192,12 @@ def main():
     own_bits = f"{os.path.dirname(FPN[0])}/fp_bits.npy" if FPN else ""
     bits = np.load(own_bits if os.path.exists(own_bits) else f"{ART}/fp_bits.npy", allow_pickle=False)
     print("FP bit index:", len(bits), "public checkpoint" if PUBLIC else "", flush=True)
-    if len(FPN) > 1:  # several FP-training outputs attached: an ensemble (logits averaged over nets)
+    if len(FPN) + len(DFP) > 1 or DFP:  # several FP models (FPNet / DreaMS): logits averaged over nets
         os.makedirs(f"{OUT}/fpbank", exist_ok=True)
         for i, pth in enumerate(sorted(FPN)):
             shutil.copy(pth, f"{OUT}/fpbank/fpnet_{i}.pt")
+        for i, pth in enumerate(sorted(DFP)):
+            shutil.copy(pth, f"{OUT}/fpbank/dreams_fp_{i}.pt")
         fpm = P.load_fp_models(f"{OUT}/fpbank")
     else:
         fpm = P.load_fp_models(os.path.dirname(FPN[0]))

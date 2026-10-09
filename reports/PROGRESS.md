@@ -209,3 +209,25 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   A C2 0.825 / C2H 0.768 / C2X 0.694 (V19: 0.836 / 0.802 / 0.731) — worse on the test-like panel; C C2 0.664 /
   C2H 0.629 / C2X 0.613 (V19: 0.623 / 0.571 / 0.532) — much better where the public model has likely seen the
   structures. Consistent with memorisation and a ranker that learns to over-trust it → V20 is an LB probe.
+
+## Round: DreaMS backbone for the FP model (Oct 9, night)
+
+* **Why:** classes 2/3 (unseen structures) are where we lose; our FPNet is trained from scratch on ~2.5 M spectra
+  of ~100 k structures. DreaMS (Bushuiev et al., Nat. Biotechnol. 2025) is a 116 M-parameter spectrum transformer
+  pretrained self-supervised on GeMS (tens of millions of unlabelled public MassIVE/GNPS spectra; no NIST in
+  training — NIST20/MoNA appear only in its validation callbacks). Code MIT; weights Zenodo 10997887 / Hugging Face.
+  We fine-tune the self-supervised checkpoint ourselves on train.parquet → our own model on a pretrained encoder.
+  The released contrastive `embedding_model.ckpt` is not used (its fine-tuning data is not documented in the code).
+* **Getting it:** this sandbox cannot reach GitHub / Zenodo / Hugging Face or Kaggle's file host, so
+  `casmi26-dreams-probe` (Kaggle, internet) downloads code + weights and prints the sources into its log; the
+  checkpoints stay in that kernel's output (mounted by the training kernel).
+* **`src/casmi/dreams_backbone.py`:** the official encoder layers (MIT, attributed) as a plain torch module with the
+  official parameter names; the Lightning checkpoint loads without the `dreams` / `msml` packages (stub unpickler,
+  strict key / shape check). Equivalence with the official forward on random weights: max |diff| 5e-7 (4 configs).
+  Two engineering fixes: Fourier m/z features (up to 5,000 cycles/Da) computed in fp32 outside autocast; the
+  pairwise "m/z-difference" attention bias lin(f_i − f_j) computed as lin(f)_i − lin(f)_j (identical, no
+  (B, n, n, ~1000) tensor). `DreamsFP` = backbone → [precursor token, mean peak token, condition embedding] → MLP →
+  our 6,919 bits; `pipeline.load_fp_models` picks up `dreams_fp*.pt` (averaged with FPNets if both are present).
+* **Training (`kaggle/dreams_ft`, GPU, ~10.6 h):** run 3's targets / exclusions / BCE, DreaMS preprocessing (60
+  highest peaks, relative intensities, precursor token), AdamW lr 5e-5 backbone / 5e-4 head, warm-up + cosine,
+  peak dropout + intensity jitter. Evaluation: `casmi26-moe-fp-pc-dreams` (alone) and `-dreams-r3` (with run 3).
