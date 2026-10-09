@@ -34,3 +34,14 @@ Our best own submission: 0.342 (V8, V12).
   the LB says real test class 3 is hard).
 * Public FPNet: hard-negative top-1 0.46–0.49 on np-examples; ours 0.22 → FP runs 4/5.
 * Fine-tuning FPNet on timsTOF hurt the board (0.337 → 0.328) for one team.
+
+## 2026-10-09
+
+**Leaderboard** (2,849 teams): top 0.484 / 0.481 / 0.459. Cutoffs: gold 0.442 (rank 15), silver 0.432 (rank 142),
+bronze 0.425 (rank 284) — the 0.433 cluster grew (66 teams), i.e. a newer public pipeline. Ours: V13 0.372 best;
+V14 0.353, V15 0.359; V16a/b (C2X-trained ranker) pending.
+
+**Forum (7 new posts):** nothing that changes data, metric or rules. Open licensing questions on the
+`ahmedberatozer/*` datasets (incl. `casmi26-pubchem-tier`, which we use as plain PubChem data) are still
+unanswered → task: rebuild our own PubChem tier from NCBI before the final selection. The current leader
+(rank 1) estimates a realistic maximum of ~0.55.
