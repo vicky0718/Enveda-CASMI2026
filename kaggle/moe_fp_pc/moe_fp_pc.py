@@ -63,7 +63,22 @@ def raw_peaks(rows):
 USE_NP = False
 # the saved ranker: V13 budget (PubChem top-100), trained on every regime present (incl. C2X when there);
 # validation alone (est) has preferred variants the LB then rejected, so the choice is explicit
-FORCE = "with PubChem rows (V13)"
+FORCE = "V16a regimes, C2P halved"
+
+
+def train_rows(f, name):
+    """Training rows of a variant: regime exclusions / sub-sampling by variant name."""
+    import zlib
+    if "without C2X" in name:
+        f = f[~f.regime.isin(["C2X", "C2PX"])]
+    if "without C2PX" in name or name.startswith("V16a regimes"):
+        f = f[f.regime != "C2PX"]
+    if "C2P halved" in name:  # C2P lists of half the molecules (stable hash of the molecule key)
+        half = f.qkey.map(lambda k: zlib.crc32(str(k).encode()) % 2 == 0)
+        f = f[~((f.regime == "C2P") & half)]
+    if "no C2P" in name:
+        f = f[f.regime != "C2P"]
+    return f
 
 
 def copy_fp(out):
@@ -235,17 +250,16 @@ def evaluate_and_save(feats_df):
             variants.append(("V13 budget, trained without C2X", base))
         if "C2PX" in regimes:
             variants.append(("V13 budget, trained without C2PX", base))
+            # PubChem-promotion dose (LB: 33 % PubChem-only training lists 0.351, 25 % 0.372, 20 % 0.379)
+            variants.append(("V16a regimes, C2P halved", base))
+            variants.append(("V16a regimes, no C2P", base))
     frames = dict(variants)
     for name, f in variants:
         train_panels = ["A", "B", "C"] if "A+B+C" in name else ["A", "C"]
         cols = [c for c in moe.expert_features(f_pc, "full") if not (name.endswith("no NP-likeness") and c in np_cols)]
         oof = np.zeros(len(f))
         for k in range(5):
-            tr = f[(f.fold != k) & f.panel.isin(train_panels)]
-            if "without C2X" in name:
-                tr = tr[~tr.regime.isin(["C2X", "C2PX"])]
-            if "without C2PX" in name:
-                tr = tr[tr.regime != "C2PX"]
+            tr = train_rows(f[(f.fold != k) & f.panel.isin(train_panels)], name)
             va = f[f.fold == k]
             oof[va.index] = moe._fit(tr, cols, moe.CONFIG["level1_rounds"]).predict(va[cols].astype(np.float32))
         rep = R.mrr_of(f, blended(f, oof))
@@ -293,7 +307,8 @@ def evaluate_and_save(feats_df):
         return
     if best.endswith("no NP-likeness"):
         frames[best] = frames[best].drop(columns=np_cols)
-    moe.fit_save(frames[best], OUT, names=["full"], stack=False, seeds=3)
+    # the final fit sees the same training rows as the variant's cross-validation (regime exclusions included)
+    moe.fit_save(train_rows(frames[best], best).reset_index(drop=True), OUT, names=["full"], stack=False, seeds=3)
     open(f"{OUT}/pc_budget.txt", "w").write(best + "\n")
     open(f"{OUT}/casmi26_models.txt", "w").write("V13: full ranker with FP, trained with PubChem rows\n")
     if FPN:

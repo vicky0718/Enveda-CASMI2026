@@ -16,6 +16,7 @@
 | V15 (`-r5`) | V13 with FP run 5 (best FP alone: A MRR 0.397 vs 0.332), PubChem top-200 | 31 min | 0.359 (−0.013 vs V13, inside noise; a better FP alone does not move the LB) |
 | **V16a** (`-moe-pc` v3) | V13 + ranker trained with C2X (analogs ≥ 0.5 removed), FP run 3, no NP | 26 min | **0.379** (best) |
 | V16b (`-r5` v2) | same with FP run 5 | 30 min | 0.364 (run 5 below run 3 on the LB twice: V15 −0.013, V16b −0.015) |
+| V17 (`-moe-pc` v4) | V16a + C2PX in ranker training (PubChem rows promoted more readily) | 28 min | 0.351 (−0.028: more PubChem promotion displaces in-pool answers on the real test) |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
@@ -177,3 +178,4 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   in-pool regimes ~0.02 (C C2 0.615→0.599, C2H 0.574→0.551, C2X 0.528→0.505; A C2H 0.797→0.775) because PubChem
   rows are promoted more readily. Analog-poor estimate 0.16·C1 + (0.45−s)·C2X + s·C2PX: A +0.014…+0.032,
   C +0.001…+0.013 for s = 0.1…0.2 → V17 = V16a + C2PX in training.
+* **V17 LB 0.351** (−0.028 vs V16a). Share of training lists whose truth is PubChem-only vs LB: 33 % → 0.351, 25 % (V13) → 0.372, 20 % (V16a) → 0.379 — less PubChem promotion scores better. V18 = V16a regimes with half the C2P lists (~11 %); the evaluation kernel's final fit now applies the variant's regime exclusions (it only did in cross-validation; V16a/V17 used every regime, so unaffected).
