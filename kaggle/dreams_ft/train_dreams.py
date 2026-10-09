@@ -255,8 +255,14 @@ def read_checkpoint(path):
     hp = ck["hyper_parameters"]
     args = hp["args"]
     df = getattr(args, "dformat", None)
-    dformat = {k: getattr(df, k) for k in ("max_mz", "max_tbxic_stdev", "max_prec_mz", "max_peaks_n")
-               if hasattr(df, k)} if df is not None else {}
+    # data-format settings are class attributes of dreams.utils.dformats (not pickled): by class name
+    known = {"DataFormatA": dict(max_mz=1000.0, max_tbxic_stdev=1e-4, max_prec_mz=1000.0, max_peaks_n=128),
+             "DataFormatB": dict(max_mz=1500.0, max_tbxic_stdev=1e-3, max_prec_mz=1500.0, max_peaks_n=128),
+             "DataFormatC": dict(max_mz=1500.0, max_tbxic_stdev=1e-3, max_prec_mz=1500.0, max_peaks_n=128)}
+    name = type(df).__name__ if df is not None else "DataFormatA"
+    if name not in known:
+        raise RuntimeError(f"unknown DreaMS data format {name}")
+    dformat = dict(known[name], name=name)
     return args, dformat, ck["state_dict"], hp
 
 

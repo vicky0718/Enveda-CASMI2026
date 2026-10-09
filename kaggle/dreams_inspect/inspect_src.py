@@ -20,7 +20,7 @@ WD = os.path.dirname(glob.glob("/kaggle/input/**/dreams_src.tar.gz", recursive=T
 with tarfile.open(f"{WD}/dreams_src.tar.gz") as t:
     t.extractall("/tmp/src")
 data_py = open("/tmp/src/DreaMS/dreams/utils/data.py").read()
-for name, n in (("    def __call__(self, spec: np.array, prec_mz=None", 3500), ("    def __getitem__", 6000)):
+for name, n in (("    def get_spec(self", 5000),):
     for m in re.finditer(re.escape(name), data_py):
         print(f"----- data.py at '{name.strip()}' -----\n{data_py[m.start():m.start() + n]}\n", flush=True)
 
@@ -67,26 +67,38 @@ for ck in sorted(glob.glob(f"{WD}/**/ssl_model.ckpt", recursive=True)):
                                                          "ionization_mode", "instrument_type"]).to_pylist()
     rng = np.random.default_rng(0)
     rows = [r for r in tb if r["ionization_mode"] == "positive" and r["precursor_mz"] < 1000 and len(r["ms2_mzs"]) >= 8]
-    rows = [rows[i] for i in rng.choice(len(rows), min(256, len(rows)), replace=False)]
-    for npk in (60, 100):
-        X = np.stack([DB.prep_spectrum(r["ms2_mzs"], r["ms2_normalized_intensities"], r["precursor_mz"], npk)
-                      for r in rows])
-        n_real = (X[:, 1:, 0] > 0).sum(1)
-        res = {}
-        for variant in ("mz_only", "mz_and_intensity"):
-            Xm = X.copy()
-            js = 1 + np.array([rng.integers(k) for k in n_real])  # one masked real peak per spectrum
-            true = X[np.arange(len(X)), js, 0].copy()
-            Xm[np.arange(len(X)), js, 0] = mask_val
-            if variant == "mz_and_intensity":
-                Xm[np.arange(len(X)), js, 1] = mask_val
+    rows = [rows[i] for i in rng.choice(len(rows), min(512, len(rows)), replace=False)]
+    import copy
+
+    ctrl = copy.deepcopy(net)
+    torch.manual_seed(0)
+    for n_, p_ in ctrl.named_parameters():  # control: same architecture, re-initialised encoder weights
+        if "fourier_enc" not in n_:
+            p_.data = torch.randn_like(p_) * p_.std().clamp(min=1e-3) if p_.dim() > 1 else p_.data
+    for inst in ("all", "orbitrap"):
+        sub = [r for r in rows if inst == "all" or "orbitrap" in str(r["instrument_type"]).lower()]
+        if len(sub) < 32:
+            continue
+        X = np.stack([DB.prep_spectrum(r["ms2_mzs"], r["ms2_normalized_intensities"], r["precursor_mz"], 60)
+                      for r in sub])
+        # pretraining-style masks: 30 % of the peaks with relative intensity >= 0.1, drawn in proportion to intensity
+        Xm, M_ = X.copy(), np.zeros(X.shape[:2], bool)
+        for b in range(len(X)):
+            cand = np.flatnonzero((X[b, :, 1] >= 0.1) & (np.arange(X.shape[1]) > 0) & (X[b, :, 0] > 0))
+            if len(cand) == 0:
+                continue
+            k = max(1, min(len(cand), int(round(0.3 * (X[b, 1:, 0] > 0).sum()))))
+            pr = X[b, cand, 1] / X[b, cand, 1].sum()
+            sel = rng.choice(cand, k, replace=False, p=pr)
+            M_[b, sel] = True
+        Xm[M_, 0] = mask_val
+        for name, model in (("pretrained", net), ("control", ctrl)):
             with torch.no_grad():
-                h = net(torch.as_tensor(Xm))
-                logits = head(h[torch.arange(len(X)), torch.as_tensor(js)])
+                h = model(torch.as_tensor(Xm))
+                logits = head(h[torch.as_tensor(M_)])
             pred = (logits.argmax(1).numpy() + 0.5) * bin_size
-            res[variant] = (float(np.mean(np.abs(pred - true) <= bin_size)), float(np.median(np.abs(pred - true))))
-        chance = float(np.mean([np.mean(np.abs(X[b, 1:1 + n_real[b], 0] - X[b, 1 + rng.integers(n_real[b]), 0])
-                                        <= bin_size) for b in range(len(X))]))
-        print(f"masked-m/z head through our backbone, {npk} peaks: within one bin {res} "
-              f"(within-spectrum chance ~{chance:.3f})", flush=True)
+            true = X[M_, 0]
+            err = np.abs(pred - true)
+            print(f"[{inst}, {len(sub)} spectra, {M_.sum()} masked peaks] {name}: within 1 bin {np.mean(err <= bin_size):.3f}"
+                  f", within 0.5 Da {np.mean(err <= 0.5):.3f}, median error {np.median(err):.2f} Da", flush=True)
 print("done", f"{time.time() - T0:.0f}s", flush=True)
