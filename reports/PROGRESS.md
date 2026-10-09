@@ -14,6 +14,8 @@
 | V13 (`-moe-pc`) | V12 + 100 most popular PubChem structures per mass window, ranked with f·z (full expert trained on C1/C2/C2H/C2P, 3 seeds); PubChem window follows the timsTOF window | 24 min | **0.372** |
 | V14 (`-moe-pc` v2) | V13 + NP-likeness feature | 25 min | 0.353 (−0.019 vs V13: validation gain did not transfer — like curated-DB flags, NP-likeness favours well-documented validation truths; feature dropped) |
 | V15 (`-r5`) | V13 with FP run 5 (best FP alone: A MRR 0.397 vs 0.332), PubChem top-200 | 31 min | 0.359 (−0.013 vs V13, inside noise; a better FP alone does not move the LB) |
+| **V16a** (`-moe-pc` v3) | V13 + ranker trained with C2X (analogs ≥ 0.5 removed), FP run 3, no NP | 26 min | **0.379** (best) |
+| V16b (`-r5` v2) | same with FP run 5 | 30 min | 0.364 (run 5 below run 3 on the LB twice: V15 −0.013, V16b −0.015) |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
@@ -169,3 +171,4 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
 * **NP-likeness off (as shipped)**, out of fold, ranker trained with vs without C2X — run 3 FP: A C2 0.819→0.840,
   C2H 0.768→0.794, **C2X 0.586→0.730**; C C1 0.685→0.688, C2 0.605→0.618, C2H 0.559→0.572, **C2X 0.446→0.539**;
   run 5 FP: A C2X 0.595→0.747, C C2X 0.457→0.534. No regime gets worse. Submitted V16a (run 3) and V16b (run 5).
+* **LB: V16a 0.379 (best), V16b 0.364.** C2X training helps (+0.007 over V13, predicted direction). FP run 5 scored below run 3 in both paired comparisons (−0.013, −0.015; ~1.3σ combined) despite better validation → run 6 = run 3's recipe + formula annotations only (no PairBias / jitter / bit-prior / merge), so the LB isolates the formula change.

@@ -1,6 +1,6 @@
 """Train our spectrum -> fingerprint transformer (casmi.fpmodel.FPNet) on the competition train file.
 
-Run 6 = run 5 without PairBias (m/z jitter, bit-prior initialisation, merge augmentation, pure BCE) + formula-annotated
+Run 6 = run 3's recipe (pure BCE; no PairBias, jitter, bit-prior init or merge augmentation) + formula-annotated
 peaks (MIST-style): every peak carries the sub-formula of the precursor ion that explains it (formula.annotate,
 10 ppm / 2 mDa; unexplained = zeros) and the loss formula; the global token carries the precursor ion formula.
 At inference the formula is a candidate's: the model runs once per distinct candidate formula.
@@ -54,7 +54,11 @@ REL = False  # run 4 (PairBias) tied run 3 on held-out panels at 25 % lower spee
 FORMULA = True
 assert "formula" in M.FPNet.__init__.__code__.co_varnames, "fpmodel without formula inputs"
 
-MERGE_P = float(os.environ.get("FP_MERGE_P", 0.3))
+# run 5's extras (PairBias, m/z jitter, bit-prior init, merge augmentation) scored below run 3 on the LB twice
+# (V15 vs V13, V16b vs V16a): run 6 = run 3's recipe + formula annotations only, so the LB isolates formulas
+MERGE_P = float(os.environ.get("FP_MERGE_P", 0.0))
+JITTER = False
+PRIOR_INIT = False
 assert "rel" in M.FPNet.__init__.__code__.co_varnames, "fpmodel without PairBias"
 
 D, LAYERS, NP = (64, 1, M.MAX_PEAKS) if SMOKE else (512, 6, M.MAX_PEAKS)
@@ -185,7 +189,8 @@ def main():
             drop &= drop.sum(1, keepdim=True) < n[:, None]
             pad = pad | drop
             it = (it * torch.exp(0.1 * torch.randn_like(it))).clamp(0, 1.5)
-            mz = mz * (1 + 3e-6 * torch.randn_like(mz))  # instrument-level m/z error
+            if JITTER:
+                mz = mz * (1 + 3e-6 * torch.randn_like(mz))  # instrument-level m/z error
         it = it.masked_fill(pad, 0)
         lab = gLAB[idx]
         cand = torch.cat([lab[:, None], gDEC[lab]], 1)  # (B, 32): truth first
@@ -199,11 +204,12 @@ def main():
             (s.argmax(1) == 0).float().mean(), valid.sum(1).float().mean()
 
     net = M.FPNet(nbits, d=D, layers=LAYERS, rel=REL, formula=FORMULA).to(dev)
-    with torch.no_grad():  # bit-prior initialisation: start from each bit's training frequency
-        smp = torch.as_tensor(rng.choice(tr, min(50000, len(tr)), replace=False), device=dev)
-        yb = ((gFP[gLAB[smp]][..., None] >> shifts) & 1).reshape(len(smp), -1)[:, :nbits].float().mean(0)
-        net.head[-1].bias.copy_(torch.logit(yb.clamp(1e-4, 1 - 1e-4)))
-        print("bit prior init: mean freq", float(yb.mean()), flush=True)
+    if PRIOR_INIT:  # bit-prior initialisation (off for run 6): start from each bit's training frequency
+        with torch.no_grad():
+            smp = torch.as_tensor(rng.choice(tr, min(50000, len(tr)), replace=False), device=dev)
+            yb = ((gFP[gLAB[smp]][..., None] >> shifts) & 1).reshape(len(smp), -1)[:, :nbits].float().mean(0)
+            net.head[-1].bias.copy_(torch.logit(yb.clamp(1e-4, 1 - 1e-4)))
+            print("bit prior init: mean freq", float(yb.mean()), flush=True)
     model = nn.DataParallel(net) if torch.cuda.device_count() > 1 else net
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=WD, betas=(0.9, 0.98))
     scaler = torch.amp.GradScaler(enabled=not SMOKE)
