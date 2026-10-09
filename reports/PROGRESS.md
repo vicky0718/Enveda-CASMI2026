@@ -158,3 +158,11 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
 * **FP ensemble runs 3+4+5** (`casmi26-moe-fp-pc-ens`): f·z alone A 0.370 / 0.260 (run 5 alone 0.397 / 0.272),
   B 0.632, C 0.441 / 0.312; ranker estimates tie (0.346). Runs 3/4 dilute run 5 on panel A → not submitted;
   V15 uses run 5 alone.
+
+## Round: analog-starved regime C2X (Oct 9)
+
+* **C2X** = C2 + every library spectrum of structures with ECFP4 Tanimoto ≥ 0.5 to the truth removed
+  (C2H: ≥ 0.7). Heuristic MRR C2X A 0.25 / C 0.25 (C2H 0.43 / 0.34) — closer to the LB's class 2 (~0.50 ranker).
+* **Training the ranker with C2X** (out of fold, run 3 FP, NP-likeness present in this harness): A C2 0.819→0.859,
+  C2H 0.781→0.811, **C2X 0.634→0.766**; C C2H 0.586→0.589, **C2X 0.478→0.560**, C1 0.702→0.695. Run 5 FP:
+  A C2X 0.780, C C2X 0.567. → V16a (run 3) / V16b (run 5) = V13 + ranker trained with C2X, NP-likeness off.
