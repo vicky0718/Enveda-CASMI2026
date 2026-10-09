@@ -60,6 +60,12 @@ def raw_peaks(rows):
     return out
 
 
+USE_NP = False
+# the saved ranker: V13 budget (PubChem top-100), trained on every regime present (incl. C2X when there);
+# validation alone (est) has preferred variants the LB then rejected, so the choice is explicit
+FORCE = "with PubChem rows (V13)"
+
+
 def copy_fp(out):
     """The FP model(s) next to the ranker for the submission notebook (fpnet*.pt are all loaded there)."""
     for i, pth in enumerate(sorted(FPN)):
@@ -94,6 +100,8 @@ def main():
     qs = pd.read_parquet(f"{EV}/queries.parquet")
     feats_df = pd.read_parquet(f"{EV}/features.parquet")
     feats_df = feats_df[feats_df.is_gen == 0].reset_index(drop=True)  # PubChem rows: is_gen 0, is_pc 1
+    if not USE_NP:  # NP-likeness lost 0.019 on the LB (V14): not a ranker feature
+        feats_df = feats_df.drop(columns=[c for c in feats_df.columns if c.startswith("np_like")])
     if os.environ.get("DRY_N"):  # local dry run: a molecule subsample, random f·z (no FP model)
         keep = feats_df.qkey.drop_duplicates().sample(int(os.environ["DRY_N"]), random_state=0)
         feats_df = feats_df[feats_df.qkey.isin(keep)].reset_index(drop=True)
@@ -264,7 +272,7 @@ def evaluate_and_save(feats_df):
         return (0.16 * t.get(("C", "C1"), 0) + (0.45 - s2p) / 2 * (t.get(("C", c2a), 0) + t.get(("C", c2b), 0))
                 + s2p * t.get(("C", "C2P"), 0))
     cand = [n for n, _ in variants if n != "without PubChem rows"]
-    best = max(cand, key=est)
+    best = FORCE if FORCE in dict(variants) else max(cand, key=est)
     print("chosen:", best, {n: round(est(n), 4) for n in cand}, flush=True)
     if "A+B+C" in best:  # the final fit follows the chosen training panels
         moe.fit_save(frames[best], OUT, panels=("A", "B", "C"), names=["full"], stack=False, seeds=3)
