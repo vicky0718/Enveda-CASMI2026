@@ -365,95 +365,248 @@ def fp_logits(net: DreamsFP, raw, precs, ad_idx, ins_idx, ces, modes, batch=256)
     return np.concatenate(out) if out else np.zeros((0, net.nbits), np.float32)
 ''', 'dreams_backbone.py', 'exec'), _m.__dict__)
 
-"""CPU check of casmi.dreams_backbone on the real DreaMS checkpoints (from casmi26-dreams-probe's output):
-hyper-parameters, strict weight loading, and a functional test — the pretrained masked-peak head (ff_out) must
-recover masked peak m/z through our backbone far above chance. Also prints the official masking / preprocessing
-code (dreams/utils/data.py) so the fine-tuning input matches pretraining."""
+"""Fine-tune the DreaMS backbone (self-supervised on GeMS, the public MassIVE/GNPS spectra; ssl_model.ckpt) to predict
+our fingerprint bits from the competition train file — our own model on a pretrained encoder.
+
+Same targets / exclusions / loss as FP run 3 (pure BCE over the informative bits; the held-out validation
+structures are excluded by row_struct == -2), DreaMS preprocessing (n highest peaks, intensities relative to the base
+peak, precursor token first). The model is casmi.dreams_backbone.DreamsFP (bundled into this script by
+kaggle/bundle.py); the weights come from the output of our casmi26-dreams-probe kernel (official release).
+
+Kaggle GPU script. Inputs: competition data; vigneshnehru/casmi26-fp-train (row_struct.npy, fp_targets.npy,
+decoys.npy, nbits.txt); vigneshnehru/casmi26-artifacts (code__fpmodel.py: adduct / instrument vocabularies);
+vigneshnehru/casmi26-dreams-probe (dreams_weights/ssl_model.ckpt).
+Output (/kaggle/working): dreams_fp.pt (casmi.dreams_backbone.load_fp), train_log.csv
+"""
 
 import glob
+import math
 import os
-import re
-import tarfile
+import shutil
+import sys
 import time
+from multiprocessing import Pool
 
 import numpy as np
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 import dreams_backbone as DB
 
-T0 = time.time()
-WD = os.path.dirname(glob.glob("/kaggle/input/**/dreams_src.tar.gz", recursive=True)[0])
-with tarfile.open(f"{WD}/dreams_src.tar.gz") as t:
-    t.extractall("/tmp/src")
-data_py = open("/tmp/src/DreaMS/dreams/utils/data.py").read()
-for name, n in (("    def __call__(self, spec: np.array, prec_mz=None", 3500), ("    def __getitem__", 6000)):
-    for m in re.finditer(re.escape(name), data_py):
-        print(f"----- data.py at '{name.strip()}' -----\n{data_py[m.start():m.start() + n]}\n", flush=True)
+T_START = time.time()
+BUDGET_S = float(os.environ.get("FP_BUDGET_S", 10.6 * 3600))  # Kaggle GPU sessions stop at 12 h
+SMOKE = os.environ.get("FP_SMOKE") == "1"  # local CPU check: random tiny backbone, one row group, few steps
+DS = os.environ.get("FP_DS") or os.path.dirname(glob.glob("/kaggle/input/**/fp_targets.npy", recursive=True)[0])
+TRAIN = os.environ.get("FP_TRAIN") or glob.glob("/kaggle/input/**/train.parquet", recursive=True)[0]
+_CODE = glob.glob("/kaggle/input/**/code__fpmodel.py", recursive=True)
+if _CODE:
+    os.makedirs("/kaggle/working/fpcode", exist_ok=True)
+    shutil.copy(_CODE[0], "/kaggle/working/fpcode/fpmodel.py")
+    sys.path.insert(0, "/kaggle/working/fpcode")
+else:
+    sys.path.insert(0, os.environ.get("FP_CODE", DS))
+import fpmodel as M  # noqa: E402
 
-for ck in sorted(glob.glob(f"{WD}/**/ssl_model.ckpt", recursive=True)):
-    print("\n#####", ck, os.path.getsize(ck), flush=True)
-    args, dformat, sd, hp = DB.read_checkpoint(ck)
-    print("hparams keys", list(hp.keys()))
-    print("args", {k: v for k, v in sorted(vars(args).items()) if not k.startswith("_")})
-    print("dformat", dformat)
-    sp = hp.get("spec_preproc")
-    if sp is not None:
-        print("spec_preproc", {k: (v if isinstance(v, (int, float, str, bool, type(None))) else type(v).__name__)
-                               for k, v in vars(sp).items()})
-    print("state_dict", len(sd), "tensors;", sum(v.numel() for v in sd.values()), "values")
-    print("non-encoder keys", [k for k in sd if "transformer_encoder" not in k][:40])
-    net, a, df = DB.load_backbone(ck)
-    print("backbone loaded strictly:", sum(p.numel() for p in net.parameters()), "params; d_model", net.d_model,
-          f"{time.time() - T0:.0f}s", flush=True)
+N_PEAKS = int(os.environ.get("FP_NPEAKS", 60))
+BS = 16 if SMOKE else int(os.environ.get("FP_BS", 128))
+LR_BB, LR_HEAD, WD, WARM = 5e-5, 5e-4, 0.01, (5 if SMOKE else 1500)
+ENVEDA_POS_SHIFT = -0.0004
+OUT = os.environ.get("FP_OUT", "/kaggle/working")
+print("dataset", DS, "train", TRAIN, "gpus", torch.cuda.device_count(), "peaks", N_PEAKS, "batch", BS, flush=True)
 
-    # functional test with the SSL masked-m/z head (ssl_model only)
-    head_keys = sorted(k for k in sd if k.startswith("ff_out."))
-    if not head_keys:
-        continue
-    print("ff_out", [(k, tuple(sd[k].shape)) for k in head_keys])
-    lin = [k for k in head_keys if k.endswith("weight")]
-    layers = []
-    for i, k in enumerate(lin):
-        w = sd[k].float()
-        b = sd.get(k.replace("weight", "bias"))
-        l = torch.nn.Linear(w.shape[1], w.shape[0], bias=b is not None)
-        l.weight.data = w
-        if b is not None:
-            l.bias.data = b.float()
-        layers.append(l)
-        if i < len(lin) - 1:
-            layers.append(torch.nn.ReLU())
-    head = torch.nn.Sequential(*layers).eval()
-    ncls = layers[-1].out_features
-    bin_size = float(getattr(a, "hot_mz_bin_size", 1000.0 / ncls))
-    mask_val = float(getattr(a, "mask_val", -1.0))
-    print("classes", ncls, "bin", bin_size, "mask_val", mask_val, "objective", getattr(a, "train_objective", None))
-    train = glob.glob("/kaggle/input/**/train.parquet", recursive=True)[0]
-    tb = pq.ParquetFile(train).read_row_group(3, columns=["ms2_mzs", "ms2_normalized_intensities", "precursor_mz",
-                                                         "ionization_mode", "instrument_type"]).to_pylist()
+
+def _rg(rg):
+    f = pq.ParquetFile(TRAIN)
+    rs = np.load(os.path.join(DS, "row_struct.npy"), mmap_mode="r")
+    start = sum(f.metadata.row_group(i).num_rows for i in range(rg))
+    n = f.metadata.row_group(rg).num_rows
+    lab = np.asarray(rs[start:start + n])
+    sel = np.flatnonzero(lab != -1)
+    tbl = f.read_row_group(rg, columns=["ms2_mzs", "ms2_normalized_intensities", "precursor_mz", "adduct",
+                                        "instrument_type", "ionization_mode", "collision_energy_ev",
+                                        "ingest_lib"]).take(sel)
+    mzs, its = tbl["ms2_mzs"].combine_chunks(), tbl["ms2_normalized_intensities"].combine_chunks()
+    off = mzs.offsets.to_numpy()
+    fm = pc.list_flatten(mzs).to_numpy(zero_copy_only=False)
+    fi = pc.list_flatten(its).to_numpy(zero_copy_only=False)
+    prec = tbl["precursor_mz"].to_numpy(zero_copy_only=False).astype(np.float64)
+    pos = np.asarray(tbl["ionization_mode"].to_pylist()) == "positive"
+    lib = np.asarray(tbl["ingest_lib"].to_pylist())
+    shift = np.where(pos & np.isin(lib, ["enveda-180", "enveda-np-examples"]), ENVEDA_POS_SHIFT, 0.0)
+    prec = prec + shift
+    ce = np.array([np.mean(c) if c else 0.0 for c in tbl["collision_energy_ev"].to_pylist()], np.float32)
+    k = len(sel)
+    MZ = np.zeros((k, 1 + N_PEAKS), np.float32)
+    IT = np.zeros((k, 1 + N_PEAKS), np.float16)
+    for j in range(k):
+        a, b = off[j], off[j + 1]
+        x = DB.prep_spectrum(fm[a:b] + shift[j], fi[a:b], prec[j], N_PEAKS)
+        MZ[j], IT[j] = x[:, 0], x[:, 1]
+    ad = np.array([M.ADDUCT_IX.get(a, M.ADDUCT_IX["<unk>"]) for a in tbl["adduct"].to_pylist()], np.int16)
+    ins = np.array([M.instr_family(s) for s in tbl["instrument_type"].to_pylist()], np.int8)
+    return MZ, IT, ad, ins, ce, pos.astype(np.float32), lab[sel]
+
+
+def load_data():
+    nrg = 1 if SMOKE else pq.ParquetFile(TRAIN).num_row_groups
+    with Pool(4) as p:
+        parts = p.map(_rg, range(nrg), chunksize=1)
+    cat = [np.concatenate([q[i] for q in parts]) for i in range(7)]
+    keep = (cat[0][:, 1] > 0)  # at least one peak
+    print(f"prepared {keep.sum():,} spectra in {time.time() - T_START:.0f}s", flush=True)
+    return [c[keep] for c in cat]
+
+
+def backbone():
+    if SMOKE:
+        from argparse import Namespace
+        a = Namespace(d_fourier=40, d_peak=24, d_mz_token=None, n_layers=2, n_heads=4, att_dropout=0.1, ff_dropout=0.1,
+                      residual_dropout=0.1, dropout=0.1, no_transformer_bias=False, attn_mech="dot-product",
+                      pre_norm=False, scnorm=False, graphormer_mz_diffs=True, graphormer_parametrized=True,
+                      fourier_strategy="lin_float_int", fourier_num_freqs=None, fourier_min_freq=None,
+                      fourier_trainable=False, ff_fourier_d=32, ff_fourier_depth=2, ff_peak_depth=2, no_ffs_bias=False,
+                      charge_feature=False, vanilla_transformer=False)
+        return DB.DreaMSBackbone(a, 1000.0, 1e-2)
+    ck = glob.glob("/kaggle/input/**/ssl_model.ckpt", recursive=True)[0]
+    net, args, dformat = DB.load_backbone(ck)
+    print("DreaMS backbone", ck, "params", sum(p.numel() for p in net.parameters()), "d_model", net.d_model,
+          "dformat", dformat, flush=True)
+    return net
+
+
+def main():
+    MZ, IT, AD, INS, CE, MODE, LAB = load_data()
+    fps = np.load(os.path.join(DS, "fp_targets.npy"))
+    nbits = int(open(os.path.join(DS, "nbits.txt")).read())
+    dev = torch.device("cpu" if SMOKE else "cuda")
+    tr = np.flatnonzero(LAB >= 0)
     rng = np.random.default_rng(0)
-    rows = [r for r in tb if r["ionization_mode"] == "positive" and r["precursor_mz"] < 1000 and len(r["ms2_mzs"]) >= 8]
-    rows = [rows[i] for i in rng.choice(len(rows), min(256, len(rows)), replace=False)]
-    for npk in (60, 100):
-        X = np.stack([DB.prep_spectrum(r["ms2_mzs"], r["ms2_normalized_intensities"], r["precursor_mz"], npk)
-                      for r in rows])
-        n_real = (X[:, 1:, 0] > 0).sum(1)
-        res = {}
-        for variant in ("mz_only", "mz_and_intensity"):
-            Xm = X.copy()
-            js = 1 + np.array([rng.integers(k) for k in n_real])  # one masked real peak per spectrum
-            true = X[np.arange(len(X)), js, 0].copy()
-            Xm[np.arange(len(X)), js, 0] = mask_val
-            if variant == "mz_and_intensity":
-                Xm[np.arange(len(X)), js, 1] = mask_val
-            with torch.no_grad():
-                h = net(torch.as_tensor(Xm))
-                logits = head(h[torch.arange(len(X)), torch.as_tensor(js)])
-            pred = (logits.argmax(1).numpy() + 0.5) * bin_size
-            res[variant] = (float(np.mean(np.abs(pred - true) <= bin_size)), float(np.median(np.abs(pred - true))))
-        chance = float(np.mean([np.mean(np.abs(X[b, 1:1 + n_real[b], 0] - X[b, 1 + rng.integers(n_real[b]), 0])
-                                        <= bin_size) for b in range(len(X))]))
-        print(f"masked-m/z head through our backbone, {npk} peaks: within one bin {res} "
-              f"(within-spectrum chance ~{chance:.3f})", flush=True)
-print("done", f"{time.time() - T0:.0f}s", flush=True)
+    mon = rng.choice(tr, min(20000, len(tr) // 10), replace=False)
+    tr = np.setdiff1d(tr, mon)
+    print(f"train {len(tr):,}  monitor {len(mon):,}  nbits {nbits}", flush=True)
+
+    g = lambda a, dt=None: torch.as_tensor(a if dt is None else a.astype(dt)).to(dev)  # noqa: E731
+    gMZ, gIT = g(MZ), g(IT)
+    gAD, gINS, gCE, gMODE = g(AD, np.int64), g(INS, np.int64), g(CE), g(MODE)
+    gLAB, gFP = g(np.maximum(LAB, 0), np.int64), g(fps)
+    gDEC = g(np.load(os.path.join(DS, "decoys.npy")), np.int64)
+    del MZ, IT
+    shifts = torch.arange(7, -1, -1, device=dev, dtype=torch.uint8)
+
+    def batch(idx, aug):
+        idx = torch.as_tensor(idx, device=dev)
+        mz, it = gMZ[idx], gIT[idx].float()
+        if aug:  # drop 10 % of the peaks (never the precursor token nor all peaks), jitter intensities
+            real = mz[:, 1:] > 0
+            drop = (torch.rand(real.shape, device=dev) < 0.1) & real
+            drop &= drop.sum(1, keepdim=True) < real.sum(1, keepdim=True)
+            mz = mz.clone()
+            mz[:, 1:] = mz[:, 1:].masked_fill(drop, 0.0)
+            it = it.clone()
+            it[:, 1:] = (it[:, 1:] * torch.exp(0.1 * torch.randn_like(it[:, 1:]))).clamp(0, 1).masked_fill(
+                mz[:, 1:] == 0, 0.0)
+        spec = torch.stack([mz, it], -1)
+        lab = gLAB[idx]
+        cand = torch.cat([lab[:, None], gDEC[lab]], 1)
+        yc = ((gFP[cand.clamp(min=0)][..., None] >> shifts) & 1).reshape(len(idx), cand.shape[1], -1)[..., :nbits]
+        return (spec, gAD[idx], gINS[idx], gCE[idx], gMODE[idx]), yc[:, 0].float(), (yc, cand >= 0)
+
+    def contrastive(z, yc, valid):
+        s = torch.einsum("bkn,bn->bk", yc.float(), z.float()).masked_fill(~valid, float("-inf"))
+        return (s.argmax(1) == 0).float().mean(), valid.sum(1).float().mean()
+
+    net = DB.DreamsFP(backbone(), nbits, len(M.ADDUCT_LIST), len(M.INSTR_LIST)).to(dev)
+    model = nn.DataParallel(net) if torch.cuda.device_count() > 1 else net
+    bb_params = list(net.backbone.parameters())
+    bb_ids = {id(p) for p in bb_params}
+    head_params = [p for p in net.parameters() if id(p) not in bb_ids]
+    opt = torch.optim.AdamW([{"params": [p for p in bb_params if p.requires_grad], "lr": LR_BB, "base": LR_BB},
+                             {"params": head_params, "lr": LR_HEAD, "base": LR_HEAD}],
+                            weight_decay=WD, betas=(0.9, 0.98))
+    scaler = torch.amp.GradScaler(enabled=not SMOKE)
+    steps_per_epoch = 20 if SMOKE else len(tr) // BS
+    total, step, ep = None, 0, 0
+    t_train = time.time()
+    last_save = time.time()
+    log = open(os.path.join(OUT, "train_log.csv"), "w")
+    log.write("epoch,step,train_bce,mon_bce,mon_top1_in_window,mon_cands,lr_bb,elapsed_s\n")
+
+    def factor(s):
+        if s < WARM:
+            return (s + 1) / WARM
+        if total is None:
+            return 1.0
+        return 0.5 * (1 + math.cos(math.pi * min(1.0, (s - WARM) / max(1, total - WARM))))
+
+    def save():
+        DB.save_fp(net, os.path.join(OUT, "dreams_fp.pt"), N_PEAKS, extra={"steps": step, "epochs": ep})
+
+    def evaluate():
+        model.eval()
+        ml = acc = ncand = 0.0
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16, enabled=not SMOKE):
+            for b in range(0, len(mon), 512):
+                x, y, (yc, valid) = batch(mon[b:b + 512], False)
+                z = model(*x).float()
+                ml += F.binary_cross_entropy_with_logits(z, y, reduction="sum").item()
+                a, nc = contrastive(z, yc, valid)
+                acc += a.item() * len(y)
+                ncand += nc.item() * len(y)
+        model.train()
+        return ml / (len(mon) * nbits), acc / len(mon), ncand / len(mon)
+
+    done = False
+    while not done:
+        perm = rng.permutation(tr)
+        run, nrun = 0.0, 0
+        model.train()
+        for b in range(steps_per_epoch):
+            x, y, _ = batch(perm[b * BS:(b + 1) * BS], True)
+            f = factor(step)
+            for gp in opt.param_groups:
+                gp["lr"] = gp["base"] * f
+            with torch.autocast("cuda", dtype=torch.float16, enabled=not SMOKE):
+                z = model(*x)
+            loss = F.binary_cross_entropy_with_logits(z.float(), y)
+            opt.zero_grad(set_to_none=True)
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)
+            nn.utils.clip_grad_norm_(net.parameters(), 1.0)
+            scaler.step(opt)
+            scaler.update()
+            if b % 50 == 0:
+                run += loss.item()
+                nrun += 1
+            step += 1
+            if total is None and step == (10 if SMOKE else 300):
+                rate = step / (time.time() - t_train)
+                remain = BUDGET_S - (time.time() - T_START) - 900
+                total = int(min((2 if SMOKE else 30) * steps_per_epoch, step + remain * rate))
+                print(f"{rate:.2f} steps/s ({rate * BS:.0f} spectra/s); total steps {total:,} "
+                      f"(~{total / steps_per_epoch:.2f} epochs)", flush=True)
+            if step % (5 if SMOKE else 2000) == 0:
+                print(f"  step {step:,} loss {loss.item():.5f} lr_bb {opt.param_groups[0]['lr']:.2e} "
+                      f"{time.time() - T_START:.0f}s", flush=True)
+            if time.time() - last_save > 2700:  # checkpoint every 45 min: a timeout must not lose the run
+                save()
+                last_save = time.time()
+            if total is not None and step >= total:
+                done = True
+                break
+        ep += 1
+        ml, acc, nc = evaluate()
+        msg = (f"{ep},{step},{run / max(nrun, 1):.5f},{ml:.5f},{acc:.4f},{nc:.1f},{opt.param_groups[0]['lr']:.2e},"
+               f"{time.time() - T_START:.0f}")
+        print(msg, flush=True)
+        log.write(msg + "\n")
+        log.flush()
+        save()
+        last_save = time.time()
+    print("done", time.time() - T_START, flush=True)
+
+
+if __name__ == "__main__":
+    main()
