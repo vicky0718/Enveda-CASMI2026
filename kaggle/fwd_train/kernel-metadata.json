@@ -1,0 +1,18 @@
+{
+  "id": "vigneshnehru/casmi26-fwdnet-train",
+  "title": "casmi26-fwdnet-train",
+  "code_file": "train_fwd.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "competition_sources": [
+    "enveda-CASMI26-molecule-id-mass-spectra"
+  ],
+  "dataset_sources": [
+    "vigneshnehru/casmi26-fp-train",
+    "vigneshnehru/casmi26-artifacts"
+  ],
+  "kernel_sources": []
+}

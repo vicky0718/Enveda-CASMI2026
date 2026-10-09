@@ -16,7 +16,7 @@ ART = ROOT / "data" / "artifacts"
 OUT = ART / "submit_ds"
 MODULES = ["__init__", "simkernels", "spectra", "library", "formula", "fpmodel", "search", "pipeline", "metric",
            "frag", "edits", "fp", "rank", "edge", "pubchem",
-           "moe"]
+           "moe", "fwdmodel"]
 SLUG = "casmi26-artifacts"
 
 
