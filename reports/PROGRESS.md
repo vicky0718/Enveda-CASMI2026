@@ -180,3 +180,8 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   rows are promoted more readily. Analog-poor estimate 0.16·C1 + (0.45−s)·C2X + s·C2PX: A +0.014…+0.032,
   C +0.001…+0.013 for s = 0.1…0.2 → V17 = V16a + C2PX in training.
 * **V17 LB 0.351** (−0.028 vs V16a). Share of training lists whose truth is PubChem-only vs LB: 33 % → 0.351, 25 % (V13) → 0.372, 20 % (V16a) → 0.379 — less PubChem promotion scores better. V18 = V16a regimes with half the C2P lists (~11 %); the evaluation kernel's final fit now applies the variant's regime exclusions (it only did in cross-validation; V16a/V17 used every regime, so unaffected).
+* **Per-bit FP calibration** (cross-fitted logistic a·z + c per bit on 2,022 panel molecules; mean slope 0.62,
+  log-lik −0.172 → −0.158): f·z alone A 0.332 → 0.351 (top-1 0.224 → 0.244), B 0.632 → 0.666, C flat; ranker with
+  V16a's regimes, paired with v7: A C2X 0.718 → 0.731, C C2X 0.528 → 0.532, C C2 0.615 → 0.623, A C2 0.843 → 0.836
+  — small, mostly positive → V19 = V16a + calibration (fp_calib.npz shipped with the model).
+* V18 LB 0.376 (half the C2P lists) — dose curve plateaus at 11–20 %.
