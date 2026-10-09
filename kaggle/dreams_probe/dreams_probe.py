@@ -45,14 +45,23 @@ with tarfile.open(f"{W}/dreams_src.tar.gz", "w:gz") as t:
                 and p.endswith((".py", ".md", ".sh", ".yaml", ".yml", ".toml", ".cfg", ".txt", ".json", "LICENSE"))):
             t.add(p, arcname=os.path.relpath(p, "/tmp"))
 log("sources archived", os.path.getsize(f"{W}/dreams_src.tar.gz"))
+for rel in ("dreams/models/dreams/dreams.py", "dreams/models/dreams/layers.py", "dreams/models/layers/fourier_features.py",
+            "dreams/models/layers/feed_forward.py", "dreams/api.py", "dreams/utils/spectra.py", "dreams/utils/dformats.py",
+            "dreams/models/heads/heads.py", "dreams/definitions.py"):
+    p = os.path.join("/tmp/DreaMS", rel)
+    if os.path.exists(p):
+        txt = open(p).read()
+        print(f"\n===== {rel} ({len(txt)} chars) =====\n{txt}\n===== end {rel} =====", flush=True)
 
-# 2. weights (Zenodo first, Hugging Face as fallback)
+# 2. weights (Hugging Face first, Zenodo as fallback; skip what exists)
 os.makedirs(f"{W}/dreams_weights", exist_ok=True)
 for name in ("ssl_model.ckpt", "embedding_model.ckpt"):
     dst = f"{W}/dreams_weights/{name}"
-    for url in (f"https://zenodo.org/records/10997887/files/{name}?download=1",
-                f"https://huggingface.co/roman-bushuiev/DreaMS/resolve/main/{name}",
-                f"https://huggingface.co/roman-bushuiev/DreaMS/resolve/main/weights/{name}"):
+    if os.path.exists(dst):
+        continue
+    for url in (f"https://huggingface.co/roman-bushuiev/DreaMS/resolve/main/{name}",
+                f"https://huggingface.co/roman-bushuiev/DreaMS/resolve/main/weights/{name}",
+                f"https://zenodo.org/records/10997887/files/{name}?download=1"):
         try:
             with urllib.request.urlopen(url, timeout=900) as r, open(dst + ".part", "wb") as f:
                 while True:
@@ -68,24 +77,7 @@ for name in ("ssl_model.ckpt", "embedding_model.ckpt"):
             log("failed", url, type(e).__name__, e)
 sh(f"ls -la {W}/dreams_weights")
 
-# 3. checkpoints: hyper-parameters and parameter shapes
-import torch  # noqa: E402
-
-for p in sorted(glob.glob(f"{W}/dreams_weights/*.ckpt")):
-    ck = torch.load(p, map_location="cpu", weights_only=False)
-    info = {"top_keys": sorted(map(str, ck.keys())) if isinstance(ck, dict) else str(type(ck))}
-    if isinstance(ck, dict):
-        hp = ck.get("hyper_parameters") or ck.get("hparams") or {}
-        info["hparams"] = {str(k): repr(v)[:300] for k, v in dict(hp).items()}
-        sd = ck.get("state_dict") or ck.get("model") or {}
-        info["n_params"] = int(sum(v.numel() for v in sd.values() if hasattr(v, "numel")))
-        info["shapes"] = {k: list(v.shape) for k, v in sd.items() if hasattr(v, "shape")}
-    REPORT[os.path.basename(p)] = info
-    log(os.path.basename(p), "params", info.get("n_params"), "hparams", json.dumps(info.get("hparams"))[:3000])
-    for k, v in list(info.get("shapes", {}).items())[:80]:
-        print("   ", k, v)
-
-# 4. import the package (no dependency changes to torch); install missing light dependencies on demand
+# 3. import the package (no dependency changes to torch); install missing light dependencies on demand
 sh("pip install --no-deps -e /tmp/DreaMS")
 sys.path.insert(0, "/tmp/DreaMS")
 for _ in range(15):
@@ -102,6 +94,37 @@ for _ in range(15):
     except Exception as e:  # noqa: BLE001
         log("import error", type(e).__name__, e)
         break
+
+# 4. checkpoints (after the package import: Lightning checkpoints may pickle dreams objects): hyper-parameters and parameter shapes
+import torch  # noqa: E402
+
+import zipfile  # noqa: E402
+
+for p in sorted(glob.glob(f"{W}/dreams_weights/*.ckpt")):
+    sz = os.path.getsize(p)
+    with open(p, "rb") as fh:
+        head = fh.read(8)
+        fh.seek(max(0, sz - 22))
+        tail = fh.read(22)
+    log(p, "size", sz, "head", head, "tail", tail, "zip", zipfile.is_zipfile(p))
+    try:
+        ck = torch.load(p, map_location="cpu", weights_only=False)
+    except Exception as e:  # noqa: BLE001
+        log("load failed", p, type(e).__name__, str(e)[:300])
+        REPORT[os.path.basename(p)] = {"load_error": str(e)[:300], "size": sz, "head": repr(head)}
+        continue
+    info = {"top_keys": sorted(map(str, ck.keys())) if isinstance(ck, dict) else str(type(ck))}
+    if isinstance(ck, dict):
+        hp = ck.get("hyper_parameters") or ck.get("hparams") or {}
+        info["hparams"] = {str(k): repr(v)[:300] for k, v in dict(hp).items()}
+        sd = ck.get("state_dict") or ck.get("model") or {}
+        info["n_params"] = int(sum(v.numel() for v in sd.values() if hasattr(v, "numel")))
+        info["shapes"] = {k: list(v.shape) for k, v in sd.items() if hasattr(v, "shape")}
+    REPORT[os.path.basename(p)] = info
+    log(os.path.basename(p), "params", info.get("n_params"), "hparams", json.dumps(info.get("hparams"))[:3000])
+    for k, v in list(info.get("shapes", {}).items())[:80]:
+        print("   ", k, v)
+
 try:
     from dreams import api
 
