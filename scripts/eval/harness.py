@@ -193,12 +193,14 @@ def _score_job(key):
     res, feats, gens = [], [], {}
     pc_mode = _G.get("pc") is not None  # PubChem experiment: no generator; regimes C1, C2, C2P
     hard = _G.get("hard", False)        # stress test: C2H also removes the truth's close analogs
-    if pc_mode and hard:  # both: PubChem rows in every regime, incl. the analog-thinned one
-        regimes = ("C1", "C2", "C2H", "C2P")
+    if pc_mode and hard:  # both: PubChem rows in every regime, incl. the analog-thinned one(s)
+        # C2X (HARNESS_X=1): analogs thinned at Tanimoto >= 0.5 — the test's class 2 implies far weaker
+        # analog evidence than C2H (LB class-2 MRR ~0.50 vs 0.57-0.78 on C2H)
+        regimes = ("C1", "C2", "C2H", "C2X", "C2P") if _G.get("x") else ("C1", "C2", "C2H", "C2P")
     else:
         regimes = ("C1", "C2", "C2P") if pc_mode else (("C1", "C2", "C2H") if hard else ("C1", "C2", "C3"))
-    near = set()
-    if hard and key in pool.row_of_key.index:  # structures with ECFP4 Tanimoto >= 0.7 to the truth
+    near, near_x = set(), set()
+    if hard and key in pool.row_of_key.index:  # structures with ECFP4 Tanimoto >= 0.7 (C2X: 0.5) to the truth
         tr_row = int(pool.row_of_key[key])
         ks = np.unique(np.r_[h.key.values[h.pool_row.values >= 0], pool.key[cand_all]])
         rows_k = pool.row_of_key.reindex(ks).values
@@ -206,16 +208,18 @@ def _score_job(key):
         ks, rows_k = ks[ok], rows_k[ok].astype(int)
         T = tanimoto(pool.ecfp4[[tr_row]], pool.ecfp4[rows_k])[0]
         near = set(ks[(T >= 0.7) & (ks != key)])
+        near_x = set(ks[(T >= 0.5) & (ks != key)])
     for regime in regimes:
         same = h.key.values == key
         excl = same & (h.ref_lib.values == _G["src_of"][key]) if regime == "C1" else same
-        if regime == "C2H" and near:
-            excl = excl | np.isin(h.key.values, list(near))
+        nr = near if regime == "C2H" else (near_x if regime == "C2X" else set())
+        if nr:
+            excl = excl | np.isin(h.key.values, list(nr))
         hh = h[~excl]
         tr_rows = _G["truth_rows"].get(key, np.zeros(0, np.int64))
         excl_rows = tr_rows[lib.L["lib_code"][tr_rows] == _G["src_of"][key]] if regime == "C1" else tr_rows
-        if regime == "C2H" and near:
-            excl_rows = np.r_[excl_rows, lib.rows_of_keys(np.array(sorted(near)))[0]]
+        if nr:
+            excl_rows = np.r_[excl_rows, lib.rows_of_keys(np.array(sorted(nr)))[0]]
         keep = ~np.isin(pool.key[cand_all], list(truth)) if regime in ("C3", "C2P") else np.ones(len(cand_all), bool)
         cand = cand_all[keep]
         if pc_mode:  # C2P: the truth is only in PubChem (removed from our pool), so it may come back as a PC row
@@ -274,6 +278,7 @@ def score():
     _G["truth_rows"] = {qk[i]: rows[owner == i] for i in np.unique(owner)}
     import os
     _G["hard"] = bool(os.environ.get("HARNESS_HARD"))
+    _G["x"] = bool(os.environ.get("HARNESS_X"))
     if os.environ.get("HARNESS_PUBCHEM"):
         from casmi.pubchem import PubChemTier
         _G["pc"] = PubChemTier(os.environ["HARNESS_PUBCHEM"])
@@ -291,6 +296,8 @@ def score():
     suffix = ("_hardpc" if _G.get("hard") else "_pc") if _G.get("pc") is not None else ("_hard" if _G.get("hard") else "")
     if _G.get("pc") is not None and _G["pc_n"] != 100:
         suffix += str(_G["pc_n"])
+    if _G.get("x"):
+        suffix += "_x"
     r.to_parquet(EVAL / f"scores{suffix}.parquet")
     pd.concat(feats, ignore_index=True).to_parquet(EVAL / f"features{suffix}.parquet")
     print(r.groupby(["panel", "regime"])[["mrr", "in_list", "n_cand", "n_gen"]].mean().round(4))

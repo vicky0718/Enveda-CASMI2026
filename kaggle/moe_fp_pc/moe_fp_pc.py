@@ -187,7 +187,7 @@ def evaluate_and_save(feats_df):
         return out
 
     from casmi import moe
-    regimes = ("C1", "C2", "C2H", "C2P")
+    regimes = tuple(r for r in ("C1", "C2", "C2H", "C2X", "C2P") if r in set(feats_df.regime))
     f_pc = relative(R.prepare(feats_df, regimes=regimes))
     folds = f_pc.drop_duplicates("qkey").set_index("qkey").fold  # same molecule folds for both variants
     f_no = feats_df[feats_df.is_pc == 0].copy()
@@ -223,6 +223,8 @@ def evaluate_and_save(feats_df):
     base = dict(variants).get("with PubChem top-100", dict(variants).get("with PubChem rows (V13)"))
     if base is not None:
         variants.append(("V13 budget, ranker trained on A+B+C", base))
+        if "C2X" in regimes:  # does training on the analog-starved regime change the ranker?
+            variants.append(("V13 budget, trained without C2X", base))
     frames = dict(variants)
     for name, f in variants:
         train_panels = ["A", "B", "C"] if "A+B+C" in name else ["A", "C"]
@@ -230,6 +232,8 @@ def evaluate_and_save(feats_df):
         oof = np.zeros(len(f))
         for k in range(5):
             tr = f[(f.fold != k) & f.panel.isin(train_panels)]
+            if "without C2X" in name:
+                tr = tr[tr.regime != "C2X"]
             va = f[f.fold == k]
             oof[va.index] = moe._fit(tr, cols, moe.CONFIG["level1_rounds"]).predict(va[cols].astype(np.float32))
         rep = R.mrr_of(f, blended(f, oof))
@@ -253,8 +257,11 @@ def evaluate_and_save(feats_df):
     # keep the variant with the best panel-C estimate at a 15 % PubChem-only share (V13's LB gain implies
     # roughly 10-15 % under the panel-C proxy)
     def est(n, s2p=0.15):
+        """Panel-C estimate; with C2X present the in-pool class 2 is (C2H + C2X) / 2 — the LB's class-2 MRR
+        (~0.50) sits below C2H, so the analog-starved regimes are the closer proxy."""
         t = tab.loc[n]
-        return (0.16 * t.get(("C", "C1"), 0) + (0.45 - s2p) / 2 * (t.get(("C", "C2"), 0) + t.get(("C", "C2H"), 0))
+        c2a, c2b = ("C2H", "C2X") if ("C", "C2X") in t.index else ("C2", "C2H")
+        return (0.16 * t.get(("C", "C1"), 0) + (0.45 - s2p) / 2 * (t.get(("C", c2a), 0) + t.get(("C", c2b), 0))
                 + s2p * t.get(("C", "C2P"), 0))
     cand = [n for n, _ in variants if n != "without PubChem rows"]
     best = max(cand, key=est)
