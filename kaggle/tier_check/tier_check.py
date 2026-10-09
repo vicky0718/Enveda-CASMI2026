@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 
-import numpy as np
 
 whl = [w for w in glob.glob("/kaggle/input/**/rdkit*.whl", recursive=True)
        if f"-cp{sys.version_info.major}{sys.version_info.minor}-" in w][:1]
