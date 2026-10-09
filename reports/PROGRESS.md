@@ -17,6 +17,7 @@
 | **V16a** (`-moe-pc` v3) | V13 + ranker trained with C2X (analogs ≥ 0.5 removed), FP run 3, no NP | 26 min | **0.379** (best) |
 | V16b (`-r5` v2) | same with FP run 5 | 30 min | 0.364 (run 5 below run 3 on the LB twice: V15 −0.013, V16b −0.015) |
 | V17 (`-moe-pc` v4) | V16a + C2PX in ranker training (PubChem rows promoted more readily) | 28 min | 0.351 (−0.028: more PubChem promotion displaces in-pool answers on the real test) |
+| V18 (`-moe-pc` v5) | V16a regimes with half the C2P lists (~11 % PubChem-only lists) | 18 min | 0.376 (= V16a within noise; dose curve 33 % 0.351 / 25 % 0.372 / 20 % 0.379 / 11 % 0.376 plateaus) |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
