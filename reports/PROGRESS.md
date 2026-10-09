@@ -194,3 +194,10 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   the third-party tier's 105,875,489 rows, i.e. that tier is one row per connectivity): truth coverage in the
   ±5 ppm window, top-10 / 100 / 300 — A 0.960 / 0.984 / 0.984 (third-party 0.964 / 0.984 / 0.984), C 0.413 / 0.660
   / 0.717 (0.427 / 0.657 / 0.717). `kaggle/submit_ncbi` = V19 with only our tier (no third-party datasets).
+* **External reference spectra — deprioritised.** train.parquet already holds Enveda (1.15 M), Pluskal MS2 (528 k),
+  RIKEN (347 k), GNPS (221 k), MassBank (102 k), MoNA (92 k), Spectraverse (51 k), MS-DIAL (41 k) and smaller sets;
+  what remains public is mostly duplicates, non-commercial (parts of GNPS) or NIST; class 2 is defined as structures
+  without public reference spectra.
+* **Third-party weights** (public FPNet checkpoints — same architecture as ours, bit index matches our fingerprint
+  definition; GLACIER / ICEBERG MassSpecGym weights): the user permitted them, but the session's permission
+  classifier blocks loading them ("Code from External"); waiting for a permission rule.
