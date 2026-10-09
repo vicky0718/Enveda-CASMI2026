@@ -56,9 +56,11 @@ def download(name, tries=4):
 
 
 def batches(path, ncols, types, include):
-    """Stream a gzipped tab-separated file (no header; columns by position f0, f1, ...) as record batches."""
-    opts = pcsv.ReadOptions(column_names=[f"f{i}" for i in range(ncols)], block_size=1 << 26)
-    parse = pcsv.ParseOptions(delimiter="\t", quote_char=False, invalid_row_handler=lambda row: "skip")
+    """Stream a gzipped tab-separated file (no header) as record batches; columns by position f0, f1, ... The
+    column count is taken from the file itself (CID-SID / CID-PMID carry a third column), `ncols` is only the
+    minimum we need."""
+    opts = pcsv.ReadOptions(autogenerate_column_names=True, block_size=1 << 26)
+    parse = pcsv.ParseOptions(delimiter="\t", quote_char=False)
     conv = pcsv.ConvertOptions(column_types=types, include_columns=include)
     with gzip.open(path, "rb") as fh:
         for b in pcsv.open_csv(fh, read_options=opts, parse_options=parse, convert_options=conv):
