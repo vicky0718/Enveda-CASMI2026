@@ -84,6 +84,36 @@ def counts(name, maxcid):
     return c
 
 
+def connectivity_groups(name, maxcid):
+    """Per CID: integer id of its InChIKey first block (-1 if unknown). CID-InChI-Key: CID, InChI, InChIKey.
+    Keys are encoded as base-26 integers of their first 13 letters (vectorised; a Python dict of ~1e8 strings
+    would not fit in memory) and grouped with np.unique."""
+    try:
+        path = download(name)
+    except Exception as e:  # noqa: BLE001
+        log("skip", name, type(e).__name__, e)
+        return None
+    pw = (26 ** np.arange(12, -1, -1)).astype(np.int64)
+    cids, codes = [], []
+    for b in batches(path, 3, {"f0": pa.int64(), "f2": pa.string()}, ["f0", "f2"]):
+        cid = b.column("f0").to_numpy()
+        key = b.column("f2")
+        ok = (cid <= maxcid) & (pc.utf8_length(key).to_numpy(zero_copy_only=False) == 27)
+        k13 = pc.cast(pc.utf8_slice_codeunits(pc.filter(key, pa.array(ok)), 0, 13), pa.binary())
+        buf = np.frombuffer(k13.buffers()[2], np.uint8)
+        off = np.frombuffer(k13.buffers()[1], np.int32)[k13.offset:k13.offset + len(k13) + 1]
+        mat = buf[off[0]:off[-1]].reshape(-1, 13).astype(np.int64) - 65
+        cids.append(cid[ok])
+        codes.append(mat @ pw)
+    os.remove(path)
+    cids, codes = np.concatenate(cids), np.concatenate(codes)
+    _, inv = np.unique(codes, return_inverse=True)
+    grp = np.full(maxcid + 1, -1, np.int64)
+    grp[cids] = inv
+    log(name, "groups", int(inv.max()) + 1)
+    return grp
+
+
 def main():
     # 1. masses and formulas -> the CIDs we keep (CID-Mass: CID, formula, monoisotopic mass, exact mass)
     mass_path = download("CID-Mass.gz")
@@ -120,9 +150,20 @@ def main():
     del out_smi
     log("SMILES rows:", len(cid))
 
-    # 3. popularity (log1p counts of substances and PubMed references)
-    sid_c = counts("CID-SID.gz", maxcid)
-    pmid_c = counts("CID-PMID.gz", maxcid)
+    # 3. popularity (log1p counts of substances and PubMed references), summed over all CIDs sharing the InChIKey
+    #    first block (stereo variants / tautomer records of one structure): on the validation panels this recovers
+    #    the truth coverage of the third-party arrays (panel C top-100 0.653 vs 0.657; per-CID counts 0.613)
+    sid_c = counts("CID-SID.gz", maxcid).astype(np.int64)
+    pmid_c = counts("CID-PMID.gz", maxcid).astype(np.int64)
+    grp = connectivity_groups("CID-InChI-Key.gz", maxcid)
+    if grp is not None:
+        ok = grp >= 0
+        ng = int(grp.max()) + 1
+        gs = np.bincount(grp[ok], weights=sid_c[ok], minlength=ng)
+        gp = np.bincount(grp[ok], weights=pmid_c[ok], minlength=ng)
+        sid_c = np.where(ok, gs[np.maximum(grp, 0)], sid_c)
+        pmid_c = np.where(ok, gp[np.maximum(grp, 0)], pmid_c)
+        log("popularity aggregated over", ng, "InChIKey first blocks")
 
     # 4. mass order and the arrays
     mass = mass_of[cid]
