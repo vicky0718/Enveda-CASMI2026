@@ -166,3 +166,6 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
 * **Training the ranker with C2X** (out of fold, run 3 FP, NP-likeness present in this harness): A C2 0.819→0.859,
   C2H 0.781→0.811, **C2X 0.634→0.766**; C C2H 0.586→0.589, **C2X 0.478→0.560**, C1 0.702→0.695. Run 5 FP:
   A C2X 0.780, C C2X 0.567. → V16a (run 3) / V16b (run 5) = V13 + ranker trained with C2X, NP-likeness off.
+* **NP-likeness off (as shipped)**, out of fold, ranker trained with vs without C2X — run 3 FP: A C2 0.819→0.840,
+  C2H 0.768→0.794, **C2X 0.586→0.730**; C C1 0.685→0.688, C2 0.605→0.618, C2H 0.559→0.572, **C2X 0.446→0.539**;
+  run 5 FP: A C2X 0.595→0.747, C C2X 0.457→0.534. No regime gets worse. Submitted V16a (run 3) and V16b (run 5).
