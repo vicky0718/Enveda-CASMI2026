@@ -185,3 +185,8 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   V16a's regimes, paired with v7: A C2X 0.718 → 0.731, C C2X 0.528 → 0.532, C C2 0.615 → 0.623, A C2 0.843 → 0.836
   — small, mostly positive → V19 = V16a + calibration (fp_calib.npz shipped with the model).
 * V18 LB 0.376 (half the C2P lists) — dose curve plateaus at 11–20 %.
+* **Own NCBI PubChem tier** (`casmi26-pubchem-tier-ncbi` v2, 10 min build): 113.8 M structures (third-party 105.9 M),
+  389 M CID-SID and 52 M CID-PMID rows counted. On the 400 test queries (tims window, top-100 not in pool): median
+  Jaccard of the candidate sets 0.79, top-10 overlap 0.76, same first candidate 56 % — the popularity ranking
+  differs (per-CID counts here; the third-party arrays likely aggregate stereo variants or count differently).
+  Before it replaces the third-party datasets: match the popularity definition and check C2P coverage on the panels.
