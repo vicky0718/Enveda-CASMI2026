@@ -201,3 +201,7 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
 * **Third-party weights** (public FPNet checkpoints — same architecture as ours, bit index matches our fingerprint
   definition; GLACIER / ICEBERG MassSpecGym weights): the user permitted them, but the session's permission
   classifier blocks loading them ("Code from External"); waiting for a permission rule.
+* **Public FPNet checkpoints** (`casmi26-fp-models-v2`, same architecture, 6,930-bit index) in our C2 pool windows
+  (`scripts/thirdparty/eval_public_fp.py`): single A 0.407 / top-1 0.252, C 0.576 / 0.461; merged A 0.420 / 0.268,
+  C 0.572 / 0.456 (ours: run 3 A 0.332 / 0.224, C 0.427 / 0.291; run 5 A 0.397 / 0.272, C 0.443 / 0.312). They were
+  probably trained on all training structures (our panels included), so validation is optimistic → LB decides.
