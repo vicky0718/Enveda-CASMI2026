@@ -196,7 +196,8 @@ def _score_job(key):
     if pc_mode and hard:  # both: PubChem rows in every regime, incl. the analog-thinned one(s)
         # C2X (HARNESS_X=1): analogs thinned at Tanimoto >= 0.5 — the test's class 2 implies far weaker
         # analog evidence than C2H (LB class-2 MRR ~0.50 vs 0.57-0.78 on C2H)
-        regimes = ("C1", "C2", "C2H", "C2X", "C2P") if _G.get("x") else ("C1", "C2", "C2H", "C2P")
+        # C2PX: the truth only in PubChem AND analogs >= 0.5 removed (PubChem-only test molecules are analog-poor too)
+        regimes = ("C1", "C2", "C2H", "C2X", "C2P", "C2PX") if _G.get("x") else ("C1", "C2", "C2H", "C2P")
     else:
         regimes = ("C1", "C2", "C2P") if pc_mode else (("C1", "C2", "C2H") if hard else ("C1", "C2", "C3"))
     near, near_x = set(), set()
@@ -212,7 +213,7 @@ def _score_job(key):
     for regime in regimes:
         same = h.key.values == key
         excl = same & (h.ref_lib.values == _G["src_of"][key]) if regime == "C1" else same
-        nr = near if regime == "C2H" else (near_x if regime == "C2X" else set())
+        nr = near if regime == "C2H" else (near_x if regime in ("C2X", "C2PX") else set())
         if nr:
             excl = excl | np.isin(h.key.values, list(nr))
         hh = h[~excl]
@@ -220,11 +221,12 @@ def _score_job(key):
         excl_rows = tr_rows[lib.L["lib_code"][tr_rows] == _G["src_of"][key]] if regime == "C1" else tr_rows
         if nr:
             excl_rows = np.r_[excl_rows, lib.rows_of_keys(np.array(sorted(nr)))[0]]
-        keep = ~np.isin(pool.key[cand_all], list(truth)) if regime in ("C3", "C2P") else np.ones(len(cand_all), bool)
+        keep = ~np.isin(pool.key[cand_all], list(truth)) if regime in ("C3", "C2P", "C2PX") \
+            else np.ones(len(cand_all), bool)
         cand = cand_all[keep]
         if pc_mode:  # C2P: the truth is only in PubChem (removed from our pool), so it may come back as a PC row
             from casmi.pubchem import pubchem_candidates
-            pkey = "C2P" if regime == "C2P" else "pool"  # C1/C2/C2H share the pool, hence the PubChem rows
+            pkey = "C2P" if regime in ("C2P", "C2PX") else "pool"  # regimes sharing the pool share the PubChem rows
             if pkey not in gens:
                 gens[pkey] = pubchem_candidates(q, _G["pc"], set(pool.key[cand]), top_n=_G["pc_n"])
             gen = gens[pkey]

@@ -195,7 +195,7 @@ def evaluate_and_save(feats_df):
         return out
 
     from casmi import moe
-    regimes = tuple(r for r in ("C1", "C2", "C2H", "C2X", "C2P") if r in set(feats_df.regime))
+    regimes = tuple(r for r in ("C1", "C2", "C2H", "C2X", "C2P", "C2PX") if r in set(feats_df.regime))
     f_pc = relative(R.prepare(feats_df, regimes=regimes))
     folds = f_pc.drop_duplicates("qkey").set_index("qkey").fold  # same molecule folds for both variants
     f_no = feats_df[feats_df.is_pc == 0].copy()
@@ -233,6 +233,8 @@ def evaluate_and_save(feats_df):
         variants.append(("V13 budget, ranker trained on A+B+C", base))
         if "C2X" in regimes:  # does training on the analog-starved regime change the ranker?
             variants.append(("V13 budget, trained without C2X", base))
+        if "C2PX" in regimes:
+            variants.append(("V13 budget, trained without C2PX", base))
     frames = dict(variants)
     for name, f in variants:
         train_panels = ["A", "B", "C"] if "A+B+C" in name else ["A", "C"]
@@ -241,7 +243,9 @@ def evaluate_and_save(feats_df):
         for k in range(5):
             tr = f[(f.fold != k) & f.panel.isin(train_panels)]
             if "without C2X" in name:
-                tr = tr[tr.regime != "C2X"]
+                tr = tr[~tr.regime.isin(["C2X", "C2PX"])]
+            if "without C2PX" in name:
+                tr = tr[tr.regime != "C2PX"]
             va = f[f.fold == k]
             oof[va.index] = moe._fit(tr, cols, moe.CONFIG["level1_rounds"]).predict(va[cols].astype(np.float32))
         rep = R.mrr_of(f, blended(f, oof))
@@ -257,6 +261,12 @@ def evaluate_and_save(feats_df):
     print(tab.round(4).to_string())
     # C2P counts as 0 without PubChem rows (the truth is unreachable); the class-2 split between
     # in-pool and PubChem-only molecules is unknown, so report a range of PubChem-only shares
+    if ("C", "C2PX") in tab.columns:  # analog-poor proxy: class 2 = C2X (in pool) + C2PX (PubChem only)
+        for s2p in (0.1, 0.2):
+            print(f"analog-poor estimate (C2X/C2PX), PubChem-only share {s2p}:",
+                  {n: {p: round(0.16 * tab.loc[n].get((p, "C1"), 0) + (0.45 - s2p) * tab.loc[n].get((p, "C2X"), 0)
+                                + s2p * tab.loc[n].get((p, "C2PX"), 0), 4) for p in "AC"} for n in tab.index},
+                  flush=True)
     for s2p in (0.1, 0.2, 0.3):
         w = {n: {p: round(0.16 * tab.loc[n].get((p, "C1"), 0) + (0.45 - s2p) / 2 * (tab.loc[n].get((p, "C2"), 0)
                                                                                    + tab.loc[n].get((p, "C2H"), 0))
