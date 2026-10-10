@@ -1,3 +1,7 @@
+# Generated from kaggle/fwd_train/train_fwd.py (edit that file): forward model "fwd2" settings.
+import os
+os.environ.update(FWD_LAMBDA="1.0", FWD_K="15", FWD_TAU="0.05", FWD_NCON="256", FWD_EPOCHS="30",
+                  FWD_MON_STRUCT="0.02")
 """Train our forward model (structure bits + conditions -> binned spectrum; casmi.fwdmodel.FwdNet, NEIMS-style)
 on the competition train file, with the FP trainer's data pipeline (same spectra, same held-out panels).
 
