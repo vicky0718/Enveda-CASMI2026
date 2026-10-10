@@ -346,3 +346,16 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   C C2 0.611 (0.623), C2H 0.565 (0.571), C2X 0.541 (0.532) — mixed on C. DreaMS + run 3 ensemble: no better.
   → V24 = DreaMS in the V19 pipeline (`kaggle/submit_v24`), V25 = DreaMS + GLACIER unseen-trained + low-pop ×3
   (`casmi26-moe-fp-pc-v25`, `kaggle/submit_v25`).
+
+## Round: V23–V25 models and notebooks; Oct 11 submission queue (Oct 10, evening)
+
+* `casmi26-moe-fp-pc-v23` (run 3) and `-v25` (DreaMS) finished with the forced variant `V16a regimes, low-pop x3,
+  GLACIER unseen-trained` and saved the ranker (`moe_full*.txt`) plus FP weights and calibration.
+* **V25 validation** (DreaMS + GLACIER unseen-trained + low-pop ×3): panel C C2 0.623, C2H 0.582, **C2X 0.551** (best
+  so far; the same variant without GLACIER gives C2X 0.532); panel A C2X 0.798.
+* `casmi26-own-submit-v24` (DreaMS FP, V19 pipeline, λ 0.3) ran cleanly: 6,919 bits, calibrated, GLACIER off,
+  25 candidates per molecule, 1,880 s.
+* `casmi26-own-submit-glacier` (V23) and `-v25` (both GLACIER on in the notebook) were pushed at 16:47 UTC. GLACIER
+  inference makes them much slower than V24: still running after 85 min.
+* **Submission queue for Oct 11, 00:10 UTC (5 slots):** V25, V23, V24, V22 (low-pop ×3, run 3), λ 0.5. Any GLACIER
+  notebook that fails is replaced by λ 0.2.
