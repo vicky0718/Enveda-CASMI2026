@@ -40,7 +40,12 @@ sys.path.insert(0, "/tmp/src/ms-pred/src")
 CKPT = glob.glob("/kaggle/input/**/glacier_msg/**/best.ckpt", recursive=True)[0]
 log("checkpoint", CKPT)
 
-# 2. dependencies: pure-python ones from PyPI (internet on); DGL / torch_scatter replaced by our stand-ins
+# 2. dependencies: the competition's RDKit wheel; pure-python ones from PyPI (internet on); DGL / torch_scatter
+#    replaced by our stand-ins
+tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
+whl = [w for w in glob.glob("/kaggle/input/**/rdkit*.whl", recursive=True) if f"-{tag}-" in w][:1]
+if whl:
+    subprocess.run([sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "-q", *whl], check=False)
 for pkg, mod in (("linsatnet", "LinSATNet"), ("pygmtools", "pygmtools"), ("pytorch-lightning", "pytorch_lightning"),
                  ("omegaconf", "omegaconf"), ("einops", "einops"), ("h5py", "h5py")):
     try:
