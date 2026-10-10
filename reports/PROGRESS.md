@@ -21,6 +21,8 @@
 | V19 (`-moe-pc` v6) | V16a + per-bit FP calibration (cross-fitted a·z + c) | 18 min | 0.375 (= V16a within noise; validation +0.01 did not transfer) |
 | V19-ncbi (`-ncbi`) | V19 on our own NCBI-built PubChem tier, no third-party datasets | 18 min | 0.373 (parity with V19 → every submission notebook now uses `casmi26-pubchem-tier-ncbi`) |
 | V20 (`-pub`) | V19 pipeline with the public FPNet checkpoint as the FP model, ranker retrained, no calibration | 20 min | 0.379 (= V16a: the public model's validation edge was memorised panels) |
+| **V21a** (`-pop03`) | V19-ncbi with popularity weight λ 0.3 (final = z(ranker) + λ·z(pop); was 0.1) | 27 min | **0.387** (new best; +0.014 over V19-ncbi) |
+| V21b (`-pop10`) | same with λ 1.0 | 27 min | 0.264 (−0.11: popularity must stay a tie-breaker — the test's compounds are not the famous ones) |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
@@ -257,8 +259,9 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   anything correlated with being well known. Changes: (1) the evaluation kernel now reports every variant also on
   **low-popularity truths** (truth not among its list's 3 most popular candidates); (2) a ranker variant counts those
   lists three times in training (`V16a regimes, low-pop x3`); `casmi26-moe-fp-pc-lowpop` runs both with run 3.
-* **Popularity-weight LB probes:** V21a λ 0.3, V21b λ 1.0 (V19-ncbi pipeline; λ 0.1 before) — pending. Given the above,
-  λ 1.0 is expected to hurt unless the hidden test is popular after all.
+* **Popularity-weight LB probes** (V19-ncbi pipeline): λ 0.1 0.373 → **λ 0.3 0.387** → λ 1.0 0.264. A peaked dose
+  curve: a moderate popularity tie-break among isomers helps, a strong one buries the less-documented truths that
+  dominate the hidden test. Next: λ 0.2 / 0.5 to locate the peak; new submission notebooks use `--pop=0.3`.
 * **Forward-model feature wired** (`pipeline.load_fp_models` loads `fwdnet*.pt`; `channel_scores` adds `fwd` = weighted
   cosine of the predicted spectrum with each measured one, plus `fwd_gap` / `fwd_rk`; the evaluation kernel scores each
   molecule's unique candidates once and ships `fwdnet.pt`). Tested on a real validation query with a random FwdNet.
