@@ -45,3 +45,20 @@ V14 0.353, V15 0.359; V16a/b (C2X-trained ranker) pending.
 `ahmedberatozer/*` datasets (incl. `casmi26-pubchem-tier`, which we use as plain PubChem data) are still
 unanswered → task: rebuild our own PubChem tier from NCBI before the final selection. The current leader
 (rank 1) estimates a realistic maximum of ~0.55.
+
+## 2026-10-10
+
+**Leaderboard** (2,950 teams): top 0.484 (MarvinTMB) / 0.481 / 0.461. Cutoffs: gold 0.443 (rank 15); silver and bronze
+both at 0.433 — 153 teams sit at exactly 0.433 (the current public pipeline), so any medal needs > 0.433. Ours: 0.387
+(V21a, popularity weight 0.3), rank ~1,049.
+
+**Host rulings (David Healey)**
+* train.parquet is open source (the non-commercial clause covers the test data); datasets that are non-commercial
+  only by inheriting from train.parquet are fine; PubChem / COCONUT and "most external datasets prominently published
+  as open source" are fine. The concern is proprietary libraries (NIST, instrument vendors). Non-compliant solutions
+  can be disqualified; compliance-check scope to be announced.
+* **GNPS-NIST14-MATCHES is allowed** (library matching and training) because it has been in the open GNPS repository
+  for years; newly created NIST-matched derivatives are not.
+
+**Other:** the leader (0.484) says no NIST or extra data is needed for a better score; molecule IDs of the visible test
+may be remapped before the end (no effect on us — we use no ID information).
