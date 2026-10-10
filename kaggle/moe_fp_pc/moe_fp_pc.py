@@ -325,9 +325,22 @@ def evaluate_and_save(feats_df):
         fb["fold"] = fb.qkey.map(folds).values
         variants.append((f"with PubChem top-{n}", fb))
     tabs = {}
+
+    def lowpop_keys(f):
+        """(qkey, regime) lists whose truth is not among the list's 3 most popular candidates."""
+        pr = f.assign(p=f["pop"].fillna(-1.0)).groupby("grp", sort=False).p.rank(ascending=False, method="min")
+        t = f.assign(pr=pr.values)[f.label.values == 1].groupby(["qkey", "regime"]).pr.min()
+        return set(t[t > 3].index)
+
+    def add_tab(name, f, rep):
+        tabs[name] = rep.groupby(["panel", "regime"]).mrr.mean()
+        if "pop" in f.columns:
+            lp = lowpop_keys(f)
+            m = [(k, r) in lp for k, r in zip(rep.qkey, rep.regime)]
+            tabs[name + " | low-pop truths"] = rep[m].groupby(["panel", "regime"]).mrr.mean()
     for name, f in (("FP alone (f·z), no PubChem", f_no), ("FP alone (f·z), with PubChem", f_pc)):
         rep = R.mrr_of(f, f.fz.values)
-        tabs[name] = rep.groupby(["panel", "regime"]).mrr.mean()
+        add_tab(name, f, rep)
         # top-1 among the window's candidates (forum's FPNet: 0.46-0.49 on np-examples)
         tabs[name + " top1"] = (rep.mrr == 1).groupby([rep.panel, rep.regime]).mean()
     if np_cols:  # NP-likeness on/off at the V13 budget, same folds
@@ -354,7 +367,7 @@ def evaluate_and_save(feats_df):
             va = f[f.fold == k]
             oof[va.index] = moe._fit(tr, cols, moe.CONFIG["level1_rounds"]).predict(va[cols].astype(np.float32))
         rep = R.mrr_of(f, blended(f, oof))
-        tabs[name] = rep.groupby(["panel", "regime"]).mrr.mean()
+        add_tab(name, f, rep)
         # rows: where the truth's best PubChem / pool competitor sits; is_pc share of first places
         top = f.assign(s=blended(f, oof)).sort_values(["grp", "s"], ascending=[True, False]).groupby("grp").head(1)
         print(name, "| share of lists topped by a PubChem row:",
@@ -392,7 +405,7 @@ def evaluate_and_save(feats_df):
     if "A+B+C" in best:  # the final fit follows the chosen training panels
         moe.fit_save(frames[best], OUT, panels=("A", "B", "C"), names=["full"], stack=False, seeds=3)
         open(f"{OUT}/casmi26_models.txt", "w").write(best + "\n")
-        if FPN:
+        if FPN or DFP or FWD:
             copy_fp(OUT)
         print("saved", sorted(os.listdir(OUT)), flush=True)
         return
@@ -402,7 +415,7 @@ def evaluate_and_save(feats_df):
     moe.fit_save(train_rows(frames[best], best).reset_index(drop=True), OUT, names=["full"], stack=False, seeds=3)
     open(f"{OUT}/pc_budget.txt", "w").write(best + "\n")
     open(f"{OUT}/casmi26_models.txt", "w").write("V13: full ranker with FP, trained with PubChem rows\n")
-    if FPN:
+    if FPN or DFP or FWD:
         copy_fp(OUT)
     print("saved", sorted(os.listdir(OUT)), f"{time.time() - T0:.0f}s", flush=True)
 
