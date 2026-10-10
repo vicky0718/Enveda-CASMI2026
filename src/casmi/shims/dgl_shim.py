@@ -1,7 +1,13 @@
-"""Import-only stand-in for DGL (see README.md). Any attribute resolves to a placeholder; calling it raises."""
+"""Import-only stand-in for DGL (see README.md). Any attribute resolves to a placeholder. Calls made while modules are
+imported (e.g. `fn.copy_u(u="h", out="m")` message-function constants) return placeholders; the calls that build or
+batch graphs raise, so an unexpected runtime use of DGL fails loudly instead of silently."""
 
 import sys
 import types
+
+
+_GRAPH_OPS = {"graph", "batch", "unbatch", "heterograph", "update_all", "apply_edges", "add_self_loop",
+              "to_bidirected", "khop_graph", "random_walk_pe", "laplacian_pe"}
 
 
 class _Missing:
@@ -9,7 +15,9 @@ class _Missing:
         self._name = name
 
     def __call__(self, *a, **k):
-        raise NotImplementedError(f"DGL API used at runtime: {self._name} (not provided by the stand-in)")
+        if self._name.split(".")[-1] in _GRAPH_OPS:
+            raise NotImplementedError(f"DGL API used at runtime: {self._name} (not provided by the stand-in)")
+        return _Missing(f"{self._name}()")
 
     def __getattr__(self, item):
         if item.startswith("__"):
