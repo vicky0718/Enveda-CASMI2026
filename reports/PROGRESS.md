@@ -250,3 +250,15 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   parameters (d 1024, 7 layers, pre-norm, unparametrised m/z-difference bias, 60 peaks); the pretrained masked-m/z
   head through our module: within 0.05 Da 4.4 % / median error 37 Da vs 0.1 % / 93 Da for a re-initialised
   control — weights and wiring are right.
+* **Why validation gains do not transfer — popularity.** Popularity alone (log1p substances + log1p PubMed, the
+  `pop` column) ranks the truth at MRR **0.78 on panel A** (every regime) and 0.21 on panel C. Panel A ("test-like"
+  np-examples) consists of famous compounds; the hidden test's classes 2+3 imply MRR ≈ 0.27 for our system, i.e. far
+  less documented compounds. Our panel-A validation (C2X 0.73) is therefore optimistic in a way that rewards
+  anything correlated with being well known. Changes: (1) the evaluation kernel now reports every variant also on
+  **low-popularity truths** (truth not among its list's 3 most popular candidates); (2) a ranker variant counts those
+  lists three times in training (`V16a regimes, low-pop x3`); `casmi26-moe-fp-pc-lowpop` runs both with run 3.
+* **Popularity-weight LB probes:** V21a λ 0.3, V21b λ 1.0 (V19-ncbi pipeline; λ 0.1 before) — pending. Given the above,
+  λ 1.0 is expected to hurt unless the hidden test is popular after all.
+* **Forward-model feature wired** (`pipeline.load_fp_models` loads `fwdnet*.pt`; `channel_scores` adds `fwd` = weighted
+  cosine of the predicted spectrum with each measured one, plus `fwd_gap` / `fwd_rk`; the evaluation kernel scores each
+  molecule's unique candidates once and ships `fwdnet.pt`). Tested on a real validation query with a random FwdNet.
