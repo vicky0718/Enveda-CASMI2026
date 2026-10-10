@@ -1,0 +1,13 @@
+{
+  "id": "vigneshnehru/casmi26-mspred-inspect",
+  "title": "casmi26-mspred-inspect",
+  "code_file": "mspred_inspect.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "competition_sources": [],
+  "dataset_sources": [],
+  "kernel_sources": ["vigneshnehru/casmi26-mspred-probe"]
+}
