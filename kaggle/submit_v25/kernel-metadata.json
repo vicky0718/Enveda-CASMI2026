@@ -1,6 +1,6 @@
 {
-  "id": "vigneshnehru/casmi26-own-submit-glacier",
-  "title": "casmi26-own-submit-glacier",
+  "id": "vigneshnehru/casmi26-own-submit-v25",
+  "title": "casmi26-own-submit-v25",
   "code_file": "casmi26_submit_moe_pc100_pop0.3_glacier.ipynb",
   "language": "python",
   "kernel_type": "notebook",
@@ -15,7 +15,7 @@
     "metric/rdkit-2026-3-3-wheel"
   ],
   "kernel_sources": [
-    "vigneshnehru/casmi26-moe-fp-pc-v23",
+    "vigneshnehru/casmi26-moe-fp-pc-v25",
     "vigneshnehru/casmi26-mspred-probe",
     "vigneshnehru/casmi26-glacier-env",
     "vigneshnehru/casmi26-pubchem-tier-ncbi"
