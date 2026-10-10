@@ -320,3 +320,18 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   0.87 (seen structures); to be evaluated as a separate ranker feature after the GLACIER evaluation.
 * Run-6 evaluation crashed on molecules with no candidate formula (empty list into the formula path) — fixed in
   `pipeline.fp_logits` and the evaluation kernel; re-running.
+
+## Round: GLACIER as ranker feature, FP run 6, DreaMS (Oct 10, afternoon)
+
+* **GLACIER features in the ranker** (`casmi26-moe-fp-pc-glacier` v1, run-3 FP; same folds; with vs `no GLACIER`):
+  panel A C2 0.836 → 0.872, C2X 0.731 → 0.816, C2PX 0.568 → 0.675 — but 96 % of panel A's truths are in MassSpecGym
+  (GLACIER's training data); panel C (50 % in MassSpecGym) C2X 0.532 → 0.540, C2PX 0.229 → 0.254; **panel C truths not
+  in MassSpecGym: C2 0.593 → 0.584, C2H 0.549 → 0.543, C2X 0.529 → 0.520 (no gain, ~ −0.007)**. GLACIER alone on those
+  unseen truths is MRR 0.31 (vs FP alone 0.38–0.45), so the signal exists, but a ranker trained mostly on memorised
+  lists over-trusts it. The hidden test's class 2/3 compounds have no public spectra → not in MassSpecGym; the unseen
+  rows are the honest proxy. Next: `GLACIER unseen-trained` variants (GLACIER features masked on training lists
+  whose truth is in MassSpecGym; validation untouched) — `casmi26-moe-fp-pc-glacier` v2.
+* **FP run 6** (formula annotations) inside the ranker ties run 3: A C2X 0.721 vs 0.731, C C2 0.619 vs 0.623, C2X
+  0.534 vs 0.532; FP alone A 0.389 (run 3 0.351), B 0.625 (0.666), C 0.412 (0.428). Not a submission candidate.
+* **DreaMS fine-tune** finished (6.6 epochs, 10.8 h, 430 spectra/s): training-slice top-1 0.686 / BCE 0.146 (run 3
+  0.80 / 0.119 at epoch 10) — held-out evaluations `casmi26-moe-fp-pc-dreams` / `-dreams-r3` running.

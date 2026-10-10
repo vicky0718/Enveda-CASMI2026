@@ -138,6 +138,14 @@ def train_rows(f, name):
         f = f[~((f.regime == "C2P") & half)]
     if "no C2P" in name:
         f = f[f.regime != "C2P"]
+    if "GLACIER unseen-trained" in name and "in_msg" in f.columns:
+        # GLACIER was trained on MassSpecGym: on lists whose truth it has seen, its cosine is near-perfect and the
+        # ranker learns to over-trust it; the hidden test's class 2/3 compounds have no public spectra (not in
+        # MassSpecGym). Training rows of seen truths therefore lose their GLACIER features (validation untouched).
+        f = f.copy()
+        seen = (f.in_msg == 1).values
+        for c in [c for c in f.columns if c.startswith("glacier")]:
+            f.loc[seen, c] = np.nan
     if "low-pop x3" in name and "pop" in f.columns:
         # the hidden test's class 2/3 compounds are far less documented than validation truths (popularity alone:
         # A 0.78 / C 0.21 MRR): lists whose truth is not among the 3 most popular candidates count three times
@@ -393,6 +401,9 @@ def evaluate_and_save(feats_df):
             if "glacier" in f_pc.columns:
                 variants.append(("V16a regimes, no GLACIER", base))
                 variants.append(("V16a regimes, low-pop x3, no GLACIER", base))
+                if "in_msg" in f_pc.columns:
+                    variants.append(("V16a regimes, GLACIER unseen-trained", base))
+                    variants.append(("V16a regimes, low-pop x3, GLACIER unseen-trained", base))
     frames = dict(variants)
     for name, f in variants:
         train_panels = ["A", "B", "C"] if "A+B+C" in name else ["A", "C"]
