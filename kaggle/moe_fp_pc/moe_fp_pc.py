@@ -27,6 +27,7 @@ ART = os.path.dirname(glob.glob(f"{INP}/**/casmi26_artifacts.txt", recursive=Tru
 EV = os.path.dirname(glob.glob(f"{INP}/**/casmi26_eval.txt", recursive=True)[0])
 FPN = glob.glob(f"{INP}/**/fpnet.pt", recursive=True)
 DFP = glob.glob(f"{INP}/**/dreams_fp.pt", recursive=True)  # DreaMS-backbone FP models (casmi26-dreams-ft)
+FWD = glob.glob(f"{INP}/**/fwdnet.pt", recursive=True)  # forward model (casmi26-fwdnet-train)
 PUBLIC = False
 _pub = glob.glob(f"{INP}/**/fp_single_s2.pt", recursive=True)
 if not FPN and _pub:  # public FPNet checkpoint (same architecture, own 6,930-bit index) as the FP model
@@ -41,7 +42,7 @@ os.makedirs(f"{OUT}/code/casmi", exist_ok=True)
 for f in glob.glob(f"{ART}/code__*.py"):
     shutil.copy(f, f"{OUT}/code/casmi/" + os.path.basename(f)[len("code__"):])
 sys.path.insert(0, f"{OUT}/code")
-print("artifacts", ART, "eval", EV, "fpnet", FPN, "dreams", DFP, flush=True)
+print("artifacts", ART, "eval", EV, "fpnet", FPN, "dreams", DFP, "fwd", FWD, flush=True)
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -145,6 +146,8 @@ def copy_fp(out):
         shutil.copy(pth, f"{out}/fpnet.pt" if len(FPN) == 1 else f"{out}/fpnet_{i}.pt")
     for i, pth in enumerate(sorted(DFP)):
         shutil.copy(pth, f"{out}/dreams_fp.pt" if len(DFP) == 1 else f"{out}/dreams_fp_{i}.pt")
+    if FWD:
+        shutil.copy(FWD[0], f"{out}/fwdnet.pt")
     b = f"{os.path.dirname(FPN[0])}/fp_bits.npy" if FPN else ""
     if b and os.path.exists(b):  # a model with its own bit index ships it next to the weights
         shutil.copy(b, f"{out}/fp_bits.npy")
@@ -218,7 +221,7 @@ def main():
         feats_df["formula"] = [pool_form[r] if r >= 0 else fmap.get(sm) for r, sm in zip(pr, feats_df.smiles.values)]
         forms_of = feats_df.groupby("qkey").formula.agg(lambda x: [v for v in pd.unique(x) if v])
         print("candidate formulas per molecule", forms_of.str.len().describe().round(1).to_dict(), flush=True)
-    z_of = {}
+    z_of, q_of = {}, {}
     for key, g in qs.groupby("key", sort=False):
         q = Query(key, [], [], [], [], [], [])
         for lr in g.lrow.values:
@@ -234,6 +237,7 @@ def main():
             q.raw.append((mz + (L.ENVEDA_POS_SHIFT if env else 0.0), it))
         q.instr = [M.INSTR_LIST[int(lib["instr"][lr])] for lr in g.lrow.values]  # true instrument
         z_of[key] = P.fp_logits(q, fpm, formulas=forms_of.get(key, [])) if use_form else P.fp_logits(q, fpm)
+        q_of[key] = q
     print("logits", len(z_of), f"{time.time() - T0:.0f}s", flush=True)
     if CALIBRATE and not use_form and not PUBLIC:  # a public model has seen the panels: no calibration on them
         z_of = calibrate(z_of, feats_df, fp_full, bits)
@@ -270,6 +274,22 @@ def main():
     if zp is not None:
         feats_df["fzn"] = fzn
     print("f·z done", f"{time.time() - T0:.0f}s", flush=True)
+    if FWD:  # forward model: cosine of the predicted spectrum (from the candidate's bits) with the measured ones
+        from casmi import fwdmodel as W
+        from casmi.edge import spectrum_weights
+        net = W.load(FWD[0])
+        fwd = np.zeros(len(feats_df), np.float32)
+        for key, g in feats_df.groupby("qkey", sort=False):  # each candidate once per molecule (all regimes)
+            u = g.drop_duplicates("smiles")
+            fps = np.stack([np.asarray(fp_full[r]) if r >= 0 else gfp[s_] for r, s_ in zip(u.pool_row.values,
+                                                                                          u.smiles.values)])
+            y = np.unpackbits(fps, axis=1, count=P.FULL_BITS)[:, bits].astype(np.float32)
+            sc = dict(zip(u.smiles.values, W.scores(net, y, q_of[key], weights=spectrum_weights(q_of[key]))))
+            fwd[g.index.values] = [sc[s_] for s_ in g.smiles.values]
+        feats_df["fwd"] = fwd
+        rep = R.mrr_of(feats_df.assign(grp=feats_df.qkey + "|" + feats_df.regime), feats_df.fwd.values)
+        print("forward model alone (cosine) MRR", rep.groupby(["panel", "regime"]).mrr.mean().round(3).to_dict(),
+              f"{time.time() - T0:.0f}s", flush=True)
     evaluate_and_save(feats_df)
 
 

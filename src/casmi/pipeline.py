@@ -54,6 +54,10 @@ def load_fp_models(art, device=None):
         nets.append(net.to(device).eval())
     bits = next((b for b in (f"{art}/fp_bits.npy", f"{art}/pool/fp_bits.npy") if os.path.exists(b)), None)
     out = {"nets": nets, "bits": None if bits is None else np.load(bits), "device": device}
+    fwd = sorted(glob.glob(f"{art}/fwdnet*.pt"))
+    if fwd:  # forward model (structure bits -> spectrum, casmi.fwdmodel): cosine to the query as a feature
+        from . import fwdmodel as W
+        out["fwd"] = W.load(fwd[0], device)
     if os.path.exists(f"{art}/fp_calib.npz"):  # per-bit logistic calibration z' = a·z + c (fit on held-out truths)
         c = np.load(f"{art}/fp_calib.npz")
         out["calib"] = (c["a"].astype(np.float32), c["c"].astype(np.float32))
@@ -221,7 +225,7 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
                    p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None,
-                   frag=None, gen=None, excl_rows=None, frag_disc=None, z_prior=None):
+                   frag=None, gen=None, excl_rows=None, frag_disc=None, z_prior=None, fwd=None):
     """Per-candidate features for one molecule: pool candidates `cand` followed by generated
     candidates `gen` (from `generate`). `hits` must already exclude any references the evaluation
     regime forbids, and `excl_rows` the same library rows (for the own-spectrum features).
@@ -309,6 +313,10 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         if z_prior is not None:  # what the spectrum adds over the bit-frequency prior
             fn = y @ (z.astype(np.float32) - z_prior)
             f["fp_norm"] = fn - fn.max()
+    if fwd is not None and n and bits is not None:  # forward model: predicted vs measured spectrum cosine
+        from .fwdmodel import scores as fwd_scores
+        y = np.unpackbits(cfp, axis=1, count=FULL_BITS)[:, bits].astype(np.float32)
+        f["fwd"] = fwd_scores(fwd, y, q, weights=spectrum_weights(q))
     if frag is not None:
         f["frag"] = frag
     if frag_disc is not None:
@@ -365,7 +373,7 @@ def own_spectrum_features(q: Query, lib: Library, ckeys, excl_rows=None, tol=0.0
     return own_n, own_sim
 
 
-REL_COLS = ["direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
+REL_COLS = ["fwd", "direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
             "analog_noself", "own_sim", "frag_disc", "analog_w", "analog_ap", "analog_ap_w", "ap_tmax", "np_like"]
 
 
@@ -451,7 +459,8 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
             f = channel_scores(q, pool, lib, h, cand, z=z, bits=None if fp_models is None else fp_models["bits"],
                                frag=FM @ pw if FM.shape[1] else np.zeros(len(smiles)), gen=gen,
                                frag_disc=frag_disc_score(FM, pw, masses),
-                               z_prior=None if fp_models is None else fp_models.get("prior"))
+                               z_prior=None if fp_models is None else fp_models.get("prior"),
+                               fwd=None if fp_models is None else fp_models.get("fwd"))
             order = ranker(f) if ranker is not None else heuristic_rank(f)
             if direct_only:  # diagnostic: keep candidates with a library spectrum (scores class 1 alone)
                 order = order[f.direct.values[order] > 0]
