@@ -310,3 +310,13 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   0.1189 at epoch 10), top-1 within the mass window 0.840 (run 3 ~0.80) — better on seen structures; the held-out
   evaluation (`casmi26-moe-fp-pc-r6`, queued for a CPU slot) and the LB decide. Forward model
   (`casmi26-fwdnet-train`) now training in the freed GPU slot. Kaggle limit: 5 concurrent CPU sessions.
+* **GLACIER alone on the validation panels** (`casmi26-glacier-feat-1..3`, 3 of 4 shards; truth ranked among each
+  molecule's whole candidate union, ~900–2,100 candidates): panel C truths **not in MassSpecGym** MRR 0.23 / 0.27 /
+  0.37 (top-1 0.20 / 0.24 / 0.34; 228 molecules), in MassSpecGym 0.29 / 0.29 / 0.24 — no memorisation advantage on
+  panel C; panel A is almost entirely in MassSpecGym (MRR ~0.5, only 8 unseen truths), so it cannot judge unseen
+  structures. GLACIER is a strong, independent isomer signal → ranker features (`casmi26-moe-fp-pc-glacier`, after
+  shard 0). Note: ~1–2 % of candidates have elements GLACIER does not support (e.g. Pb) — skipped (NaN feature).
+* **Our forward model** (`casmi26-fwdnet-train`, 30 epochs, 1.4 h): training-slice cosine 0.80, top-1 among decoys
+  0.87 (seen structures); to be evaluated as a separate ranker feature after the GLACIER evaluation.
+* Run-6 evaluation crashed on molecules with no candidate formula (empty list into the formula path) — fixed in
+  `pipeline.fp_logits` and the evaluation kernel; re-running.
