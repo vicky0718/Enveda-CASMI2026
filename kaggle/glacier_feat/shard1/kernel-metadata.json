@@ -1,0 +1,21 @@
+{
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "competition_sources": [
+    "enveda-CASMI26-molecule-id-mass-spectra"
+  ],
+  "dataset_sources": [
+    "vigneshnehru/casmi26-artifacts",
+    "vigneshnehru/casmi26-eval-pc",
+    "metric/rdkit-2026-3-3-wheel"
+  ],
+  "kernel_sources": [
+    "vigneshnehru/casmi26-mspred-probe"
+  ],
+  "id": "vigneshnehru/casmi26-glacier-feat-1",
+  "title": "casmi26-glacier-feat-1",
+  "code_file": "glacier_feat_1.py"
+}

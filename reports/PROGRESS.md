@@ -288,3 +288,20 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
    GPU submission notebook; score only same-formula groups of our top-K to bound runtime.
 3. **Two-engine fusion:** weighted reciprocal-rank fusion of our ranker's list with an independent list (e.g. a
    DreaMS-FP list), cheap to test once DreaMS is evaluated.
+
+## Round: GLACIER (official ms-pred, MassSpecGym weights) on Kaggle without DGL (Oct 10)
+
+* `casmi26-mspred-probe` (internet kernel): ms-pred (MIT) source + the official MassSpecGym checkpoints linked from its
+  README (GLACIER 15.1 M parameters; ICEBERG 2.1 `msg_all` / `msg_simulation` generator + intensity models). DGL does not
+  install on Kaggle's Python 3.13 / torch 2.11 image (the public notebooks ship their own pre-built wheels). Instead:
+  `src/casmi/shims/` — an import-only `dgl` stand-in with a minimal graph container and an exact `random_walk_pe`
+  (GLACIER's positional encoding; identical to ms-pred's own implementation, checked by hand), and a `torch_scatter`
+  stand-in on `scatter_reduce`. GLACIER's Graphormer path builds no DGL graphs otherwise.
+* **First measurement** (`casmi26-glacier-test`, CPU): 40 Enveda timsTOF [M+H]+ training spectra, truth + ≤ 14 random
+  same-formula structures from our pool: **GLACIER cosine alone MRR 0.929, top-1 0.875** (chance 0.247 / 0.080);
+  0.066 s per prediction on CPU (no GPU needed). Caveats: random same-formula decoys are easier than our ranker's
+  near-isomers, and structures may be in GLACIER's MassSpecGym training data.
+* Next: `casmi26-glacier-feat-{0..3}` (4 CPU shards) score every (molecule, candidate) of panels A and C (~202 k pairs),
+  flag truths present in MassSpecGym, and report GLACIER alone per panel × membership; then GLACIER becomes a ranker
+  feature (cosine + within-list gap / rank) in the evaluation kernel and, if it wins on unseen structures, in the
+  submission notebook (CPU, top-K candidates).
