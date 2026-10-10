@@ -265,3 +265,10 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
 * **Forward-model feature wired** (`pipeline.load_fp_models` loads `fwdnet*.pt`; `channel_scores` adds `fwd` = weighted
   cosine of the predicted spectrum with each measured one, plus `fwd_gap` / `fwd_rk`; the evaluation kernel scores each
   molecule's unique candidates once and ships `fwdnet.pt`). Tested on a real validation query with a random FwdNet.
+* **Low-popularity validation (`casmi26-moe-fp-pc-lowpop`, run 3, calibrated FP).** On lists whose truth is not among
+  its 3 most popular candidates, panel A collapses for every variant (V16a: C2X 0.731 → 0.395, C2 0.836 → 0.589,
+  C1 0.926 → 0.694; FP alone 0.351 → 0.154) while panel C barely moves (C2X 0.532 → 0.567) — panel A's apparent
+  quality was mostly popularity. Ranker with low-pop lists ×3 in training (`V16a regimes, low-pop x3`) vs V16a:
+  panel A low-pop C2X 0.395 → 0.447, C2PX 0.297 → 0.346, C2P 0.620 → 0.648; panel C within ±0.01 (C2X 0.532 → 0.535,
+  C2H 0.571 → 0.580, C1 0.687 → 0.681). No loss anywhere → V22 = V19 + low-pop ×3 ranker + λ 0.3
+  (`casmi26-moe-fp-pc-v22`, `kaggle/submit_v22`), paired against V21a.

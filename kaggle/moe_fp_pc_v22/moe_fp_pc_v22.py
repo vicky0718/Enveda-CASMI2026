@@ -1,3 +1,6 @@
+# Generated from kaggle/moe_fp_pc/moe_fp_pc.py (edit that file): V22 = final fit on the variant below.
+import os
+os.environ["CASMI_FORCE"] = "V16a regimes, low-pop x3"
 """V13 ranker: PubChem candidates scored with our FP model (Kaggle GPU).
 
 The harness features (casmi26-eval-pc) carry the 100 most popular PubChem structures of each molecule's
