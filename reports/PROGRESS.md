@@ -272,3 +272,19 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
   panel A low-pop C2X 0.395 → 0.447, C2PX 0.297 → 0.346, C2P 0.620 → 0.648; panel C within ±0.01 (C2X 0.532 → 0.535,
   C2H 0.571 → 0.580, C1 0.687 → 0.681). No loss anywhere → V22 = V19 + low-pop ×3 ranker + λ 0.3
   (`casmi26-moe-fp-pc-v22`, `kaggle/submit_v22`), paired against V21a.
+
+## Plan after the Oct 10 forum / LB refresh (deadline Dec 14)
+
+Medals now need > 0.433 (153 teams on the public pipeline), gold 0.443; we are at 0.387. The public pipeline's
+own changelog (third-party LB numbers, single submissions) attributes its lead mainly to **isomer separation by
+fragment-level spectrum simulators**: ICEBERG + GLACIER re-rank same-formula candidates by z(score) + z(ICEBERG) +
+z(GLACIER) (GLACIER [M+H]+ only +0.006; widening the re-rank and ICEBERG where GLACIER is blind 0.433 → 0.438),
+plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion of two engines.
+1. **Now:** popularity-weight peak (λ 0.2 / 0.5), V22 (low-pop ×3 ranker), DreaMS FP, FP run 6, our NEIMS-style
+   forward model (1-Da bins; weak by construction, a first isomer signal).
+2. **Next (largest expected gain): fragment-level isomer re-ranking.** MassSpecGym-trained GLACIER / ICEBERG are
+   host-approved: official MIT code (ms-pred) + official weights fetched by a Kaggle internet kernel (as for DreaMS),
+   our own scoring / batching / feature integration (simulator cosine as ranker features + a same-formula re-rank),
+   GPU submission notebook; score only same-formula groups of our top-K to bound runtime.
+3. **Two-engine fusion:** weighted reciprocal-rank fusion of our ranker's list with an independent list (e.g. a
+   DreaMS-FP list), cheap to test once DreaMS is evaluated.
