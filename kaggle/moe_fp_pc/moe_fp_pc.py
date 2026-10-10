@@ -257,7 +257,11 @@ def main():
             env = libs[lib["lib_code"][lr]].startswith("enveda") and lib["mode"][lr] > 0
             q.raw.append((mz + (L.ENVEDA_POS_SHIFT if env else 0.0), it))
         q.instr = [M.INSTR_LIST[int(lib["instr"][lr])] for lr in g.lrow.values]  # true instrument
-        z_of[key] = P.fp_logits(q, fpm, formulas=forms_of.get(key, [])) if use_form else P.fp_logits(q, fpm)
+        if use_form:  # a molecule without any candidate formula gets no FP logits (f·z = 0 for its rows)
+            forms = [fo for fo in forms_of.get(key, []) if fo]
+            z_of[key] = P.fp_logits(q, fpm, formulas=forms) if forms else None
+        else:
+            z_of[key] = P.fp_logits(q, fpm)
         q_of[key] = q
     print("logits", len(z_of), f"{time.time() - T0:.0f}s", flush=True)
     if CALIBRATE and not use_form and not PUBLIC:  # a public model has seen the panels: no calibration on them
@@ -279,7 +283,9 @@ def main():
         pr = g.pool_row.values
         fps = np.stack([np.asarray(fp_full[r]) if r >= 0 else gfp[s] for r, s in zip(pr, g.smiles.values)])
         y = np.unpackbits(fps, axis=1, count=P.FULL_BITS)[:, bits].astype(np.float32)
-        zk = z_of[key]
+        zk = z_of.get(key)
+        if zk is None:
+            continue
         if isinstance(zk, dict):  # per-row logits by the candidate's formula
             first = next(iter(zk.values()))
             Z = np.stack([zk.get(fo, first) for fo in g.formula.values]).astype(np.float32)

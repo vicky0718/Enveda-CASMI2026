@@ -113,7 +113,9 @@ def fp_logits(q: Query, fpm, formulas=None):
         if zd is not None:  # equal weight per model
             z = (len(nets) * z + len(dnets) * zd) / (len(nets) + len(dnets))
         return calibrate_logits(z, fpm)
-    formulas = list(dict.fromkeys(formulas))
+    formulas = list(dict.fromkeys(fo for fo in formulas if fo))
+    if not formulas:  # no candidate formula: only formula-free models (DreaMS) can score this molecule
+        return calibrate_logits(zd, fpm) if zd is not None else None
     S = len(peaks)
     frags, pforms = [], []
     for fo in formulas:
