@@ -36,7 +36,7 @@ ROUNDS = 300
 
 
 def feature_cols(f: pd.DataFrame):
-    feats = [c for c in BASE_FEATS + ["fp", "fp_rank", "fp_norm", "fwd"] if c in f.columns]
+    feats = [c for c in BASE_FEATS + ["fp", "fp_rank", "fp_norm", "fwd", "glacier"] if c in f.columns]
     rel = [c for c in f.columns if (c.endswith("_gap") or c.endswith("_rk")) and not c.startswith("pop")]
     return feats + rel + ["n_cand"]
 

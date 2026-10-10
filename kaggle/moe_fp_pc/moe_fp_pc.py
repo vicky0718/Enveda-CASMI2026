@@ -28,6 +28,8 @@ EV = os.path.dirname(glob.glob(f"{INP}/**/casmi26_eval.txt", recursive=True)[0])
 FPN = glob.glob(f"{INP}/**/fpnet.pt", recursive=True)
 DFP = glob.glob(f"{INP}/**/dreams_fp.pt", recursive=True)  # DreaMS-backbone FP models (casmi26-dreams-ft)
 FWD = glob.glob(f"{INP}/**/fwdnet.pt", recursive=True)  # forward model (casmi26-fwdnet-train)
+GLF = glob.glob(f"{INP}/**/glacier_shard*.parquet", recursive=True)  # GLACIER cosines (casmi26-glacier-feat-*)
+MSGF = glob.glob(f"{INP}/**/msg_keys*.parquet", recursive=True)  # truth in MassSpecGym (GLACIER's training data)
 PUBLIC = False
 _pub = glob.glob(f"{INP}/**/fp_single_s2.pt", recursive=True)
 if not FPN and _pub:  # public FPNet checkpoint (same architecture, own 6,930-bit index) as the FP model
@@ -191,6 +193,17 @@ def main():
     feats_df = feats_df[feats_df.is_gen == 0].reset_index(drop=True)  # PubChem rows: is_gen 0, is_pc 1
     if not USE_NP:  # NP-likeness lost 0.019 on the LB (V14): not a ranker feature
         feats_df = feats_df.drop(columns=[c for c in feats_df.columns if c.startswith("np_like")])
+    if GLF:  # GLACIER (fragment-level spectrum simulator): mean cosine with the molecule's measured spectra
+        gl = pd.concat([pd.read_parquet(p_) for p_ in GLF]).drop_duplicates(["qkey", "smiles"])
+        feats_df = feats_df.merge(gl[["qkey", "smiles", "gl_cos"]].rename(columns={"gl_cos": "glacier"}),
+                                  on=["qkey", "smiles"], how="left")
+        print("GLACIER scores", len(gl), "| rows covered", round(float(feats_df.glacier.notna().mean()), 3),
+              feats_df.groupby("panel").glacier.apply(lambda x: round(float(x.notna().mean()), 3)).to_dict(), flush=True)
+    if MSGF:
+        m_ = pd.concat([pd.read_parquet(p_) for p_ in MSGF]).drop_duplicates("qkey").set_index("qkey").truth_in_msg
+        feats_df["in_msg"] = feats_df.qkey.map(m_).astype("float32")
+        print("molecules with the truth in MassSpecGym:", feats_df.drop_duplicates("qkey").groupby("panel").in_msg.mean()
+              .round(3).to_dict(), flush=True)
     if os.environ.get("DRY_N"):  # local dry run: a molecule subsample, random f·z (no FP model)
         keep = feats_df.qkey.drop_duplicates().sample(int(os.environ["DRY_N"]), random_state=0)
         feats_df = feats_df[feats_df.qkey.isin(keep)].reset_index(drop=True)
@@ -346,6 +359,11 @@ def evaluate_and_save(feats_df):
             lp = lowpop_keys(f)
             m = [(k, r) in lp for k, r in zip(rep.qkey, rep.regime)]
             tabs[name + " | low-pop truths"] = rep[m].groupby(["panel", "regime"]).mrr.mean()
+        if "in_msg" in f.columns:  # structures GLACIER was not trained on (the hidden test's situation)
+            unseen = set(f.qkey[f.in_msg == 0])
+            tabs[name + " | truth not in MassSpecGym"] = rep[rep.qkey.isin(unseen)].groupby(["panel", "regime"]).mrr.mean()
+    if "glacier" in f_pc.columns:
+        add_tab("GLACIER alone, with PubChem", f_pc, R.mrr_of(f_pc, f_pc.glacier.fillna(-1).values))
     for name, f in (("FP alone (f·z), no PubChem", f_no), ("FP alone (f·z), with PubChem", f_pc)):
         rep = R.mrr_of(f, f.fz.values)
         add_tab(name, f, rep)
@@ -366,10 +384,15 @@ def evaluate_and_save(feats_df):
             variants.append(("V16a regimes, C2P halved", base))
             variants.append(("V16a regimes, no C2P", base))
             variants.append(("V16a regimes, low-pop x3", base))
+            if "glacier" in f_pc.columns:
+                variants.append(("V16a regimes, no GLACIER", base))
+                variants.append(("V16a regimes, low-pop x3, no GLACIER", base))
     frames = dict(variants)
     for name, f in variants:
         train_panels = ["A", "B", "C"] if "A+B+C" in name else ["A", "C"]
         cols = [c for c in moe.expert_features(f_pc, "full") if not (name.endswith("no NP-likeness") and c in np_cols)]
+        if "no GLACIER" in name:
+            cols = [c for c in cols if not c.startswith("glacier")]
         oof = np.zeros(len(f))
         for k in range(5):
             tr = train_rows(f[(f.fold != k) & f.panel.isin(train_panels)], name)

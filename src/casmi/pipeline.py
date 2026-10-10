@@ -373,7 +373,7 @@ def own_spectrum_features(q: Query, lib: Library, ckeys, excl_rows=None, tol=0.0
     return own_n, own_sim
 
 
-REL_COLS = ["fwd", "direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
+REL_COLS = ["fwd", "glacier", "direct", "analog", "analog_max", "tmax", "frag", "analog_tims", "analog_top5", "t_wmean",
             "analog_noself", "own_sim", "frag_disc", "analog_w", "analog_ap", "analog_ap_w", "ap_tmax", "np_like"]
 
 
