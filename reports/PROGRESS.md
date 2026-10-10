@@ -367,3 +367,29 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   replacing it, and reads GLACIER scores ~3.5 h after submission.
 * `casmi26-moe-fp-pc-v26` (running): the V25 recipe with our forward model (`casmi26-fwdnet-train`, trained with
   the validation structures held out) as an extra ranker feature, vs `..., no fwd` on the same folds.
+
+## Round: our forward model as a ranker feature (V26) (Oct 10, night)
+
+* **GLACIER notebooks validated** (20:45): V23 (`casmi26-own-submit-glacier`) and V25 (`-v25`) both completed cleanly:
+  GLACIER loaded, 0 "GLACIER failed" lines, 25 candidates for each of the 400 molecules, FP 6,919 bits calibrated,
+  λ 0.3, the right model dirs (`casmi26-moe-fp-pc-v23` / `-v25`), PubChem tier on. Runtimes 9,209 s and 10,049 s
+  (≈ 2.6–2.8 h), within the 9 h limit.
+* **`casmi26-moe-fp-pc-v26`**: the V25 recipe (DreaMS FP + GLACIER + low-pop ×3, same folds) **plus our forward
+  model** (`casmi26-fwdnet-train`; validation structures held out in training) as a ranker feature. The `no fwd`
+  ablation reproduces V25 to the 4th decimal (sanity check). Forward model alone: MRR A 0.402, B 0.683, C 0.429.
+  Note that the forward model is in every variant except `no fwd`:
+
+  | ranker (MRR@25, out of fold) | C C2 | C C2H | C C2X | C C2PX | C unseen C2 | C unseen C2X | A C2X | B C2X |
+  |---|---|---|---|---|---|---|---|---|
+  | V25 = GLACIER unseen-trained, `no fwd` | 0.623 | 0.582 | 0.551 | 0.250 | 0.590 | 0.543 | 0.798 | 0.882 |
+  | **+ fwd (V26, shipped)** | 0.629 | 0.599 | **0.580** | 0.293 | 0.608 | 0.578 | 0.801 | 0.914 |
+  | + fwd, GLACIER plain | **0.646** | **0.608** | **0.591** | **0.308** | **0.627** | **0.589** | **0.819** | 0.910 |
+  | + fwd, no GLACIER | 0.626 | 0.597 | 0.577 | 0.285 | 0.605 | 0.581 | 0.776 | 0.914 |
+
+  "C unseen" = panel C truths not in MassSpecGym, our closest stand-in for the hidden test.
+  The forward model adds +0.03–0.04 on panel C and on its unseen slice, and +0.03 on the enveda-180 isomer lists (B).
+  It is the largest single gain since the PubChem tier. With the forward model in, GLACIER adds less (+0.003 to
+  +0.014 at C2X) and the plain-vs-unseen-trained difference is within noise.
+  → V26 notebook (`kaggle/submit_v26`, `casmi26-own-submit-v26`; prints `forward model: True`) pushed 20:47 UTC. It
+  replaces the λ 0.5 probe in the Oct 11 queue: V26, V25, V24, V23, V22.
+* `casmi26-dreams-ft2` (GPU): continued DreaMS fine-tune from `casmi26-dreams-ft` at half the learning rate, running.

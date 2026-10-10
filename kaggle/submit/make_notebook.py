@@ -48,7 +48,8 @@ if fpm is not None:
     prior = np.load(f"{ART}/fp_prior.npy")  # for the prior-normalised f·z feature (our bit index only)
     if len(prior) == len(fpm["bits"]):
         fpm["prior"] = prior
-    print("FP bits:", len(fpm["bits"]), "| calibrated:", "calib" in fpm, "| prior:", "prior" in fpm)
+    print("FP bits:", len(fpm["bits"]), "| calibrated:", "calib" in fpm, "| prior:", "prior" in fpm,
+          "| forward model:", "fwd" in fpm)
 USE_GLACIER = __USE_GLACIER__  # GLACIER spectrum simulator (official ms-pred + MassSpecGym checkpoint, casmi.glacier)
 gl_src = glob.glob("/kaggle/input/**/mspred_src.tar.gz", recursive=True)
 gl_ck = glob.glob("/kaggle/input/**/glacier_msg/**/best.ckpt", recursive=True)
