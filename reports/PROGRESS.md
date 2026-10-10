@@ -305,3 +305,8 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   flag truths present in MassSpecGym, and report GLACIER alone per panel × membership; then GLACIER becomes a ranker
   feature (cosine + within-list gap / rank) in the evaluation kernel and, if it wins on unseen structures, in the
   submission notebook (CPU, top-K candidates).
+* **FP run 6** (run 3's recipe + formula-annotated peaks; 13.2 epochs, 7.7 h on 2×T4): 97.6 % of training spectra
+  annotated, 71 % of peaks explained by a sub-formula of the precursor. Training-slice monitor: BCE 0.1089 (run 3
+  0.1189 at epoch 10), top-1 within the mass window 0.840 (run 3 ~0.80) — better on seen structures; the held-out
+  evaluation (`casmi26-moe-fp-pc-r6`, queued for a CPU slot) and the LB decide. Forward model
+  (`casmi26-fwdnet-train`) now training in the freed GPU slot. Kaggle limit: 5 concurrent CPU sessions.
