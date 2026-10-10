@@ -61,6 +61,14 @@ except ImportError:
     log("torch_scatter stand-in")
 
 from ms_pred.glacier import dataset, joint_model  # noqa: E402
+import inspect  # noqa: E402
+
+import ms_pred.nn_utils as _nu  # noqa: E402
+
+try:  # what the featuriser calls for the positional encoding (must match dgl_shim.random_walk_pe semantics)
+    print(inspect.getsource(_nu.random_walk_pe), flush=True)
+except Exception as e:  # noqa: BLE001
+    print("random_walk_pe source unavailable", e)
 
 model = joint_model.JointModel.load_from_checkpoint(CKPT, map_location="cpu")
 model.eval()
