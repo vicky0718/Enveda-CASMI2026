@@ -49,6 +49,14 @@ if fpm is not None:
     if len(prior) == len(fpm["bits"]):
         fpm["prior"] = prior
     print("FP bits:", len(fpm["bits"]), "| calibrated:", "calib" in fpm, "| prior:", "prior" in fpm)
+USE_GLACIER = __USE_GLACIER__  # GLACIER spectrum simulator (official ms-pred + MassSpecGym checkpoint, casmi.glacier)
+gl_src = glob.glob("/kaggle/input/**/mspred_src.tar.gz", recursive=True)
+gl_ck = glob.glob("/kaggle/input/**/glacier_msg/**/best.ckpt", recursive=True)
+if USE_GLACIER and gl_src and gl_ck and fpm is not None:
+    from casmi import glacier as G
+    gl_whl = sorted(glob.glob("/kaggle/input/**/wheels/*.whl", recursive=True))
+    fpm["glacier"] = G.load(gl_src[0], gl_ck[0], wheels_dir=os.path.dirname(gl_whl[0]) if gl_whl else None)
+print("glacier:", "loaded" if fpm is not None and "glacier" in fpm else "off", f"{time.time() - T0:.0f}s")
 print("artifact files:", sorted(os.listdir(ART)))
 from casmi.edge import np_like
 print("NP-likeness check (flavone):", np_like("O=C1C=C(c2ccc(O)cc2)Oc2cc(O)cc(O)c21"), "| pool scores:", pool.np_like is not None)
@@ -106,7 +114,8 @@ def main():
     direct = "--direct-only" in sys.argv
     pop = next((float(a.split("=")[1]) for a in sys.argv if a.startswith("--pop=")), None)
     cells = [c.replace("__USE_GEN__", str(use_gen)).replace("__PC_N__", str(pc_n)).replace("__TIMS_WINDOW__", str(tims))
-             .replace("__DIRECT_ONLY__", str(direct)).replace("__POP_LAMBDA__", str(pop)) for c in CELLS]
+             .replace("__DIRECT_ONLY__", str(direct)).replace("__POP_LAMBDA__", str(pop))
+             .replace("__USE_GLACIER__", str("--glacier" in sys.argv)) for c in CELLS]
     nb = {"cells": [{"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
                      "source": c.strip("\n").splitlines(keepends=True)} for c in cells],
           "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
@@ -121,6 +130,8 @@ def main():
         name = name.replace(".ipynb", "_direct.ipynb")
     if pop is not None:
         name = name.replace(".ipynb", f"_pop{pop:g}.ipynb")
+    if "--glacier" in sys.argv:
+        name = name.replace(".ipynb", "_glacier.ipynb")
     p = Path(__file__).with_name(name)
     p.write_text(json.dumps(nb, indent=1))
     print(p)

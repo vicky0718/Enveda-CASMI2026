@@ -294,7 +294,7 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
 * `casmi26-mspred-probe` (internet kernel): ms-pred (MIT) source + the official MassSpecGym checkpoints linked from its
   README (GLACIER 15.1 M parameters; ICEBERG 2.1 `msg_all` / `msg_simulation` generator + intensity models). DGL does not
   install on Kaggle's Python 3.13 / torch 2.11 image (the public notebooks ship their own pre-built wheels). Instead:
-  `src/casmi/shims/` — an import-only `dgl` stand-in with a minimal graph container and an exact `random_walk_pe`
+  `src/casmi/dgl_shim.py` / `torch_scatter_shim.py` — an import-only `dgl` stand-in with a minimal graph container and an exact `random_walk_pe`
   (GLACIER's positional encoding; identical to ms-pred's own implementation, checked by hand), and a `torch_scatter`
   stand-in on `scatter_reduce`. GLACIER's Graphormer path builds no DGL graphs otherwise.
 * **First measurement** (`casmi26-glacier-test`, CPU): 40 Enveda timsTOF [M+H]+ training spectra, truth + ≤ 14 random

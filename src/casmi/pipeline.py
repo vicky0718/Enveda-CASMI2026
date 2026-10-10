@@ -227,7 +227,7 @@ def generate(q: Query, pool: Pool, hits: pd.DataFrame, cand_keys=(), k_refs=None
 
 def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand: np.ndarray,
                    p_exp=P_EXP, q_exp=Q_EXP, top_per_spec=TOP_PER_SPEC, z=None, bits=None,
-                   frag=None, gen=None, excl_rows=None, frag_disc=None, z_prior=None, fwd=None):
+                   frag=None, gen=None, excl_rows=None, frag_disc=None, z_prior=None, fwd=None, glacier=None):
     """Per-candidate features for one molecule: pool candidates `cand` followed by generated
     candidates `gen` (from `generate`). `hits` must already exclude any references the evaluation
     regime forbids, and `excl_rows` the same library rows (for the own-spectrum features).
@@ -296,6 +296,8 @@ def channel_scores(q: Query, pool: Pool, lib: Library, hits: pd.DataFrame, cand:
         f[k] = v
     f["smiles"] = np.concatenate([pool.df.smiles.values[cand], gen.smiles.values]) if ng \
         else pool.df.smiles.values[cand]
+    if glacier is not None and n:  # GLACIER: simulated vs measured spectrum cosine (casmi.glacier)
+        f["glacier"] = glacier(q, list(f.smiles.values))
     if isinstance(z, dict) and n:  # formula model: every candidate scored under its own formula
         forms = candidate_formulas(pool, cand, gen if ng else None)
         y = np.unpackbits(cfp, axis=1, count=FULL_BITS)[:, bits].astype(np.float32)
@@ -462,7 +464,8 @@ def run(test: pd.DataFrame, pool: Pool, lib: Library, ranker=None, fp_models=Non
                                frag=FM @ pw if FM.shape[1] else np.zeros(len(smiles)), gen=gen,
                                frag_disc=frag_disc_score(FM, pw, masses),
                                z_prior=None if fp_models is None else fp_models.get("prior"),
-                               fwd=None if fp_models is None else fp_models.get("fwd"))
+                               fwd=None if fp_models is None else fp_models.get("fwd"),
+                               glacier=None if fp_models is None else fp_models.get("glacier"))
             order = ranker(f) if ranker is not None else heuristic_rank(f)
             if direct_only:  # diagnostic: keep candidates with a library spectrum (scores class 1 alone)
                 order = order[f.direct.values[order] > 0]
