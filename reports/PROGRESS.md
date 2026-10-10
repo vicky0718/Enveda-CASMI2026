@@ -335,3 +335,14 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   0.534 vs 0.532; FP alone A 0.389 (run 3 0.351), B 0.625 (0.666), C 0.412 (0.428). Not a submission candidate.
 * **DreaMS fine-tune** finished (6.6 epochs, 10.8 h, 430 spectra/s): training-slice top-1 0.686 / BCE 0.146 (run 3
   0.80 / 0.119 at epoch 10) — held-out evaluations `casmi26-moe-fp-pc-dreams` / `-dreams-r3` running.
+* **GLACIER, unseen-trained** (`casmi26-moe-fp-pc-glacier` v2; GLACIER features masked on training lists whose truth
+  is in MassSpecGym): low-pop ×3 + GLACIER unseen-trained vs low-pop ×3 without GLACIER — panel C unseen C2 0.587 →
+  0.599, C2H 0.560 → 0.561, C2X 0.528 → 0.530, C2PX 0.137 → 0.147; panel C overall C2 0.620 → 0.630, C2H 0.580 →
+  0.587, C2X 0.535 → 0.547, C2PX 0.228 → 0.241; panel A C2X 0.747 → 0.781. No loss anywhere (the plain GLACIER ranker
+  lost ~0.007 on unseen C) → V23 = this variant on run 3 (`casmi26-moe-fp-pc-v23`, `kaggle/submit_glacier`).
+* **DreaMS FP** (`casmi26-moe-fp-pc-dreams`): **FP alone A 0.548 (run 3 0.351), A low-pop 0.356 (0.154), C 0.453
+  (0.428)**, B 0.574 (0.666); top-1 A 0.424 (0.244), C 0.333 (0.295) — the pretrained encoder is much better on the
+  timsTOF / test-like panel. Inside the ranker (V16a regimes): A C2X 0.764 (0.731), A low-pop C2X 0.499 (0.395);
+  C C2 0.611 (0.623), C2H 0.565 (0.571), C2X 0.541 (0.532) — mixed on C. DreaMS + run 3 ensemble: no better.
+  → V24 = DreaMS in the V19 pipeline (`kaggle/submit_v24`), V25 = DreaMS + GLACIER unseen-trained + low-pop ×3
+  (`casmi26-moe-fp-pc-v25`, `kaggle/submit_v25`).
