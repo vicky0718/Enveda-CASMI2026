@@ -359,3 +359,11 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   inference makes them much slower than V24: still running after 85 min.
 * **Submission queue for Oct 11, 00:10 UTC (5 slots):** V25, V23, V24, V22 (low-pop ×3, run 3), λ 0.5. Any GLACIER
   notebook that fails is replaced by λ 0.2.
+* **GLACIER notebook runtime** (18:25 check): both GLACIER notebooks run on CPU, like the feature shards (~9 GLACIER
+  predictions/s: 66k predictions took 2 h in `casmi26-glacier-feat-1`). The 400 test molecules (1,213 spectra; mean
+  112 pool candidates at timsTOF 5 ppm, plus up to 100 PubChem rows when the gate opens, ~1 positive adduct group
+  each) need ≤ 83k predictions, about 2.6 h, plus the 31-min base pipeline. That gives ~3 h per run (the submission
+  re-run as well), well under the 9 h limit. The 00:10 check-in waits for a still-running notebook rather than
+  replacing it, and reads GLACIER scores ~3.5 h after submission.
+* `casmi26-moe-fp-pc-v26` (running): the V25 recipe with our forward model (`casmi26-fwdnet-train`, trained with
+  the validation structures held out) as an extra ranker feature, vs `..., no fwd` on the same folds.
