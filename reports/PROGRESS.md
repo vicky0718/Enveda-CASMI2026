@@ -18,6 +18,9 @@
 | V16b (`-r5` v2) | same with FP run 5 | 30 min | 0.364 (run 5 below run 3 on the LB twice: V15 −0.013, V16b −0.015) |
 | V17 (`-moe-pc` v4) | V16a + C2PX in ranker training (PubChem rows promoted more readily) | 28 min | 0.351 (−0.028: more PubChem promotion displaces in-pool answers on the real test) |
 | V18 (`-moe-pc` v5) | V16a regimes with half the C2P lists (~11 % PubChem-only lists) | 18 min | 0.376 (= V16a within noise; dose curve 33 % 0.351 / 25 % 0.372 / 20 % 0.379 / 11 % 0.376 plateaus) |
+| V19 (`-moe-pc` v6) | V16a + per-bit FP calibration (cross-fitted a·z + c) | 18 min | 0.375 (= V16a within noise; validation +0.01 did not transfer) |
+| V19-ncbi (`-ncbi`) | V19 on our own NCBI-built PubChem tier, no third-party datasets | 18 min | 0.373 (parity with V19 → every submission notebook now uses `casmi26-pubchem-tier-ncbi`) |
+| V20 (`-pub`) | V19 pipeline with the public FPNet checkpoint as the FP model, ranker retrained, no calibration | 20 min | 0.379 (= V16a: the public model's validation edge was memorised panels) |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
@@ -231,3 +234,19 @@ all-evidence expert (config `moe.CONFIG["inference"] = "full"`; meta selectable)
 * **Training (`kaggle/dreams_ft`, GPU, ~10.6 h):** run 3's targets / exclusions / BCE, DreaMS preprocessing (60
   highest peaks, relative intensities, precursor token), AdamW lr 5e-5 backbone / 5e-4 head, warm-up + cosine,
   peak dropout + intensity jitter. Evaluation: `casmi26-moe-fp-pc-dreams` (alone) and `-dreams-r3` (with run 3).
+
+## Round: V19 / V19-ncbi / V20 on the leaderboard (Oct 10)
+
+* V19 (calibration) 0.375, V19-ncbi (own NCBI tier) 0.373, V20 (public FPNet) 0.379; best stays 0.379 (V16a, V20).
+  Every FP-model change so far (runs 4/5, calibration, public checkpoint) lands within ±0.02 of 0.37 — the FP
+  model is not the binding constraint at its current quality, or its gains on validation panels do not reach the
+  real test's class 2/3 molecules. The real test is analog-poor: what limits us is candidate recall for molecules
+  whose structure is in PubChem but has no library analog, and the ranking among PubChem isomers.
+* Own NCBI tier at parity (−0.002 vs V19): submission notebooks switched to `casmi26-pubchem-tier-ncbi`; the
+  `ahmedberatozer` / `dmitriigluzdov` datasets are no longer used by any submission.
+* GPU (weekly quota reset Oct 10): `casmi26-dreams-ft` (DreaMS fine-tune, from 00:12 UTC, ~10.6 h) and
+  `casmi26-fpnet-train6` (run 6, formula annotations, from 00:32 UTC, ~7.6 h). Forward model waits for a slot.
+* DreaMS backbone check on the real checkpoint (`casmi26-dreams-inspect` v5): strict load, 95.5 M encoder
+  parameters (d 1024, 7 layers, pre-norm, unparametrised m/z-difference bias, 60 peaks); the pretrained masked-m/z
+  head through our module: within 0.05 Da 4.4 % / median error 37 Da vs 0.1 % / 93 Da for a re-initialised
+  control — weights and wiring are right.
