@@ -345,6 +345,24 @@ for key, g in qs.groupby("key", sort=False):
     spec_of[key] = groups
 log("spectra prepared", sum(len(v) for v in spec_of.values()), "adduct/instrument groups")
 
+# candidates GLACIER can featurise: RDKit-valid, single component, every element in ms-pred's element table
+import ms_pred.common as common  # noqa: E402
+from rdkit import Chem  # noqa: E402
+
+_ok_cache = {}
+
+
+def glacier_ok(smi):
+    if smi not in _ok_cache:
+        m = Chem.MolFromSmiles(smi) if isinstance(smi, str) and "." not in smi else None
+        _ok_cache[smi] = m is not None and all(a.GetSymbol() in common.ELEMENT_TO_MASS for a in m.GetAtoms())
+    return _ok_cache[smi]
+
+
+ok = np.array([glacier_ok(s_) for s_ in pairs.smiles.values])
+log("candidates GLACIER can featurise", round(float(ok.mean()), 4), "| skipped", int((~ok).sum()))
+pairs = pairs[ok]
+
 # predictions: one per (candidate, adduct, instrument group) at the group's median collision energy
 recs, meta = [], []
 for (key, smi) in zip(pairs.qkey.values, pairs.smiles.values):
@@ -360,26 +378,17 @@ tp = dataset.TreeProcessor(pe_embed_k=model.pe_embed_k, root_encode="graphormer"
                            embed_elem_group=model.embed_elem_group, multi_hop_max_dist=model.multi_hop_max_dist)
 score = {}
 CH = 4000
-for a in range(0, len(df), CH):
-    part = df.iloc[a:a + CH]
-    try:
-        ds = dataset.IntenPredDataset(part, root_encode="graphormer", embed_elem_group=model.embed_elem_group,
-                                      tree_processor=tp, num_workers=0)
-        loader = torch.utils.data.DataLoader(ds, batch_size=32, shuffle=False, collate_fn=ds.get_collate_fn())
-    except Exception as e:  # noqa: BLE001
-        log("chunk featurisation failed", a, type(e).__name__, e)
-        continue
+
+
+def run_chunk(loader):
+    """Predict a chunk's spectra and accumulate cosines with the measured spectra into `score`."""
     with torch.inference_mode():
         for batch in loader:
-            try:
-                out = model.predict_inten(batch["graphormer_input"], batch["num_atoms"], batch["adducts"],
-                                          batch["collision_engs"], batch["root_form_vecs"], batch["masses"],
-                                          batch["adduct_mass_shifts"], batch["atom_form_vecs"], batch["adj_matrices"],
-                                          batch["atom_hs"], batch["total_hs"],
-                                          batch["instruments"] if model.embed_instrument else None, binned_out=True)
-            except Exception as e:  # noqa: BLE001
-                log("batch failed", type(e).__name__, str(e)[:200])
-                continue
+            out = model.predict_inten(batch["graphormer_input"], batch["num_atoms"], batch["adducts"],
+                                      batch["collision_engs"], batch["root_form_vecs"], batch["masses"],
+                                      batch["adduct_mass_shifts"], batch["atom_form_vecs"], batch["adj_matrices"],
+                                      batch["atom_hs"], batch["total_hs"],
+                                      batch["instruments"] if model.embed_instrument else None, binned_out=True)
             spec = out["spec"]
             spec = spec.to_dense() if getattr(spec, "is_sparse", False) else spec
             p = F.max_pool1d(torch.sqrt(spec.float().clamp(min=0))[:, None], 5, 1, 2)[:, 0]
@@ -389,6 +398,16 @@ for a in range(0, len(df), CH):
                 key, smi, ad, ins = meta[i]
                 cs = [float(pv @ v) / float(v.norm() + 1e-9) for v, _ in spec_of[key][(ad, ins)]]
                 score.setdefault((key, smi), []).extend(cs)
+
+
+for a in range(0, len(df), CH):
+    part = df.iloc[a:a + CH]
+    try:  # one bad molecule must not sink the shard: a failed chunk is logged and skipped
+        ds = dataset.IntenPredDataset(part, root_encode="graphormer", embed_elem_group=model.embed_elem_group,
+                                      tree_processor=tp, num_workers=0)
+        run_chunk(torch.utils.data.DataLoader(ds, batch_size=32, shuffle=False, collate_fn=ds.get_collate_fn()))
+    except Exception as e:  # noqa: BLE001
+        log("chunk failed", a, type(e).__name__, str(e)[:300])
     log(f"chunk {a // CH + 1}/{(len(df) + CH - 1) // CH} done, scored pairs {len(score)}")
 
 out = pd.DataFrame([(k, s, float(np.mean(v)), len(v)) for (k, s), v in score.items()],
