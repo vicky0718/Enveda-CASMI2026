@@ -1,0 +1,163 @@
+"""Run the official GLACIER (ms-pred, MIT; MassSpecGym-trained checkpoint — host-approved) on Kaggle without DGL, and
+measure what we need before building on it: does it separate the true structure from same-formula isomers on
+test-like spectra (Enveda timsTOF [M+H]+ from train.parquet), and how fast is it on CPU?
+
+Candidates per query: the true structure + up to 14 pool structures with the same molecular formula (our pool:
+train structures + COCONUT). Score: cosine of the predicted 0.01-Da spectrum with the measured one (sqrt intensity,
+±0.02 Da tolerance by max-pooling). Reports MRR / top-1 vs chance and seconds per prediction."""
+
+import ast
+import glob
+import os
+import subprocess
+import sys
+import tarfile
+import time
+
+import numpy as np
+import pandas as pd
+import pyarrow.parquet as pq
+import torch
+import torch.nn.functional as F
+
+import dgl_shim
+import torch_scatter_shim
+
+T0 = time.time()
+N_Q = int(os.environ.get("GL_NQ", 40))
+N_DEC = 14
+
+
+def log(*a):
+    print(f"[{time.time() - T0:6.0f}s]", *a, flush=True)
+
+
+# 1. official sources + checkpoint (from our casmi26-mspred-probe kernel output)
+SRC = glob.glob("/kaggle/input/**/mspred_src.tar.gz", recursive=True)[0]
+with tarfile.open(SRC) as t:
+    t.extractall("/tmp/src")
+sys.path.insert(0, "/tmp/src/ms-pred/src")
+CKPT = glob.glob("/kaggle/input/**/glacier_msg/**/best.ckpt", recursive=True)[0]
+log("checkpoint", CKPT)
+
+# 2. dependencies: pure-python ones from PyPI (internet on); DGL / torch_scatter replaced by our stand-ins
+for pkg, mod in (("linsatnet", "LinSATNet"), ("pygmtools", "pygmtools"), ("pytorch-lightning", "pytorch_lightning"),
+                 ("omegaconf", "omegaconf"), ("einops", "einops"), ("h5py", "h5py")):
+    try:
+        __import__(mod)
+    except ImportError:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", pkg], check=False)
+dgl_shim.install()
+try:
+    import torch_scatter  # noqa: F401
+    log("real torch_scatter")
+except ImportError:
+    torch_scatter_shim.install()
+    log("torch_scatter stand-in")
+
+from ms_pred.glacier import dataset, joint_model  # noqa: E402
+
+model = joint_model.JointModel.load_from_checkpoint(CKPT, map_location="cpu")
+model.eval()
+dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(dev)
+log("model loaded", sum(p.numel() for p in model.parameters()), "params; bins", model.num_bins, model.upper_limit, dev)
+
+# 3. test-like queries: Enveda timsTOF [M+H]+ spectra with a collision energy
+train = glob.glob("/kaggle/input/**/train.parquet", recursive=True)[0]
+cols = ["normalized_smiles", "inchikey14", "molecular_formula", "adduct", "ingest_lib", "collision_energy_ev",
+        "ms2_mzs", "ms2_normalized_intensities", "precursor_mz", "num_peaks"]
+pf = pq.ParquetFile(train)
+rows = []
+for rg in range(pf.num_row_groups):
+    t = pf.read_row_group(rg, columns=cols).to_pandas()
+    t = t[(t.adduct == "[M+H]+") & t.ingest_lib.str.startswith("enveda") & (t.num_peaks >= 5)
+          & t.collision_energy_ev.map(lambda c: c is not None and len(c) > 0)]
+    rows.append(t)
+    if sum(len(r) for r in rows) > 20000:
+        break
+q = pd.concat(rows).drop_duplicates("inchikey14").sample(frac=1.0, random_state=0)
+pool = pd.read_parquet(glob.glob("/kaggle/input/**/pool.parquet", recursive=True)[0], columns=["key", "smiles", "formula"])
+by_form = pool.groupby("formula").indices
+qs = []
+for r in q.itertuples():
+    idx = by_form.get(r.molecular_formula)
+    if idx is None:
+        continue
+    dec = pool.iloc[idx]
+    dec = dec[(dec.key != r.inchikey14) & (dec.smiles != r.normalized_smiles)].drop_duplicates("key")
+    if len(dec) < 5:
+        continue
+    qs.append((r, dec.sample(min(N_DEC, len(dec)), random_state=0).smiles.tolist()))
+    if len(qs) >= N_Q:
+        break
+log("queries", len(qs), "mean candidates", np.mean([1 + len(d) for _, d in qs]))
+
+# 4. predictions through the official dataset / model API (as ms_pred.glacier.predict_inten_joint)
+recs = []
+for qi, (r, dec) in enumerate(qs):
+    ce = float(np.mean(r.collision_energy_ev))
+    for ci, smi in enumerate([r.normalized_smiles] + dec):
+        recs.append({"spec": f"q{qi}_c{ci}", "smiles": smi, "ionization": "[M+H]+", "collision_energies": [ce],
+                     "instrument": "QTOF"})
+df = pd.DataFrame(recs)
+tp = dataset.TreeProcessor(pe_embed_k=model.pe_embed_k, root_encode="graphormer",
+                           embed_elem_group=model.embed_elem_group, multi_hop_max_dist=model.multi_hop_max_dist)
+ds = dataset.IntenPredDataset(df, root_encode="graphormer", embed_elem_group=model.embed_elem_group,
+                              tree_processor=tp, num_workers=0)
+loader = torch.utils.data.DataLoader(ds, batch_size=16, shuffle=False, collate_fn=ds.get_collate_fn())
+NB, UL = int(model.num_bins), float(model.upper_limit)
+pred = {}
+t1 = time.time()
+with torch.inference_mode():
+    for batch in loader:
+        for k in batch:
+            if isinstance(batch[k], torch.Tensor):
+                batch[k] = batch[k].to(dev)
+            if k == "graphormer_input" and batch[k] is not None:
+                for gk in batch[k]:
+                    batch[k][gk] = batch[k][gk].to(dev)
+        out = model.predict_inten(batch["graphormer_input"], batch["num_atoms"], batch["adducts"],
+                                  batch["collision_engs"], batch["root_form_vecs"], batch["masses"],
+                                  batch["adduct_mass_shifts"], batch["atom_form_vecs"], batch["adj_matrices"],
+                                  batch["atom_hs"], batch["total_hs"],
+                                  batch["instruments"] if model.embed_instrument else None, binned_out=True)
+        spec = out["spec"]
+        spec = spec.to_dense() if hasattr(spec, "to_dense") and spec.is_sparse else spec
+        for name, s in zip(batch["names"], spec.float().cpu()):
+            pred[name.split("_collision")[0]] = s.numpy()
+n_pred = len(pred)
+log(f"predicted {n_pred} spectra in {time.time() - t1:.1f}s ({(time.time() - t1) / max(n_pred, 1):.3f} s each)")
+
+
+def vec(mz, it):
+    v = np.zeros(NB, np.float32)
+    mz, it = np.asarray(mz, float), np.sqrt(np.clip(np.asarray(it, float), 0, None))
+    ok = (mz > 0) & (mz < UL)
+    np.maximum.at(v, (mz[ok] / UL * NB).astype(int).clip(0, NB - 1), it[ok].astype(np.float32))
+    return v
+
+
+def pooled(v):  # ±2 bins (±0.02 Da) tolerance
+    t = torch.as_tensor(v)[None, None]
+    return F.max_pool1d(t, 5, 1, 2)[0, 0]
+
+
+def cos(a, b):
+    a, b = pooled(a), pooled(np.sqrt(np.clip(b, 0, None)))
+    return float((a @ b) / (a.norm() * b.norm() + 1e-9))
+
+
+rr, top1, chance = [], [], []
+for qi, (r, dec) in enumerate(qs):
+    m = vec(r.ms2_mzs, r.ms2_normalized_intensities)
+    s = [cos(m, pred[f"q{qi}_c{ci}"]) if f"q{qi}_c{ci}" in pred else -1 for ci in range(1 + len(dec))]
+    rank = 1 + sum(x > s[0] for x in s[1:])
+    rr.append(1 / rank)
+    top1.append(rank == 1)
+    chance.append(np.mean([1 / k for k in range(1, len(s) + 1)]))
+    if qi < 5:
+        log("query", qi, r.molecular_formula, "truth cos", round(s[0], 3), "best decoy", round(max(s[1:]), 3), "rank", rank)
+log(f"GLACIER same-formula retrieval: MRR {np.mean(rr):.3f} top-1 {np.mean(top1):.3f} | chance MRR {np.mean(chance):.3f}"
+    f" top-1 {np.mean([1 / (1 + len(d)) for _, d in qs]):.3f} | {len(qs)} queries")
+log("done")
