@@ -1,0 +1,21 @@
+{
+  "id": "vigneshnehru/casmi26-dreams-ft2",
+  "title": "casmi26-dreams-ft2",
+  "code_file": "train_dreams.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "competition_sources": [
+    "enveda-CASMI26-molecule-id-mass-spectra"
+  ],
+  "dataset_sources": [
+    "vigneshnehru/casmi26-fp-train",
+    "vigneshnehru/casmi26-artifacts"
+  ],
+  "kernel_sources": [
+    "vigneshnehru/casmi26-dreams-probe",
+    "vigneshnehru/casmi26-dreams-ft"
+  ]
+}

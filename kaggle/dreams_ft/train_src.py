@@ -8,7 +8,8 @@ kaggle/bundle.py); the weights come from the output of our casmi26-dreams-probe 
 
 Kaggle GPU script. Inputs: competition data; vigneshnehru/casmi26-fp-train (row_struct.npy, fp_targets.npy,
 decoys.npy, nbits.txt); vigneshnehru/casmi26-artifacts (code__fpmodel.py: adduct / instrument vocabularies);
-vigneshnehru/casmi26-dreams-probe (dreams_weights/ssl_model.ckpt).
+vigneshnehru/casmi26-dreams-probe (dreams_weights/ssl_model.ckpt). With an earlier run's dreams_fp.pt among the inputs
+(e.g. kernel source casmi26-dreams-ft), training continues from it at half the learning rate (casmi26-dreams-ft2).
 Output (/kaggle/working): dreams_fp.pt (casmi.dreams_backbone.load_fp), train_log.csv
 """
 
@@ -46,6 +47,11 @@ import fpmodel as M  # noqa: E402
 N_PEAKS = int(os.environ.get("FP_NPEAKS", 60))
 BS = 16 if SMOKE else int(os.environ.get("FP_BS", 128))
 LR_BB, LR_HEAD, WD, WARM = 5e-5, 5e-4, 0.01, (5 if SMOKE else 1500)
+# continued fine-tuning: start from an earlier run's dreams_fp.pt (kernel source) with a fresh, lower cosine schedule
+_RES = [] if SMOKE else glob.glob("/kaggle/input/**/dreams_fp.pt", recursive=True)
+RESUME = os.environ.get("FP_RESUME_PATH") or (_RES[0] if _RES and os.environ.get("FP_RESUME", "1") == "1" else None)
+if RESUME:
+    LR_BB, LR_HEAD, WARM = LR_BB * 0.5, LR_HEAD * 0.5, 500
 ENVEDA_POS_SHIFT = -0.0004
 OUT = os.environ.get("FP_OUT", "/kaggle/working")
 print("dataset", DS, "train", TRAIN, "gpus", torch.cuda.device_count(), "peaks", N_PEAKS, "batch", BS, flush=True)
@@ -151,7 +157,13 @@ def main():
         s = torch.einsum("bkn,bn->bk", yc.float(), z.float()).masked_fill(~valid, float("-inf"))
         return (s.argmax(1) == 0).float().mean(), valid.sum(1).float().mean()
 
-    net = DB.DreamsFP(backbone(), nbits, len(M.ADDUCT_LIST), len(M.INSTR_LIST)).to(dev)
+    if RESUME:
+        net = DB.load_fp(RESUME).train().to(dev)
+        assert net.nbits == nbits and net.n_peaks == N_PEAKS, (net.nbits, net.n_peaks)
+        print("resuming from", RESUME, "lr_bb", LR_BB, "lr_head", LR_HEAD, flush=True)
+        rng = np.random.default_rng(1)  # same monitor rows (drawn above), new epoch order
+    else:
+        net = DB.DreamsFP(backbone(), nbits, len(M.ADDUCT_LIST), len(M.INSTR_LIST)).to(dev)
     model = nn.DataParallel(net) if torch.cuda.device_count() > 1 else net
     bb_params = list(net.backbone.parameters())
     bb_ids = {id(p) for p in bb_params}
