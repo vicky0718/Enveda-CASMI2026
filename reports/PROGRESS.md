@@ -23,6 +23,11 @@
 | V20 (`-pub`) | V19 pipeline with the public FPNet checkpoint as the FP model, ranker retrained, no calibration | 20 min | 0.379 (= V16a: the public model's validation edge was memorised panels) |
 | **V21a** (`-pop03`) | V19-ncbi with popularity weight λ 0.3 (final = z(ranker) + λ·z(pop); was 0.1) | 27 min | **0.387** (new best; +0.014 over V19-ncbi) |
 | V21b (`-pop10`) | same with λ 1.0 | 27 min | 0.264 (−0.11: popularity must stay a tie-breaker — the test's compounds are not the famous ones) |
+| V22 (`-v22`) | V21a + ranker trained with low-pop ×3 (lists whose truth is not among the 3 most popular duplicated) | 25 min | 0.385 (= V21a 0.387: low-pop training neither helps nor hurts) |
+| V23 (`-glacier`) | V22 + GLACIER cosine features (unseen-trained), run-3 FP | 2.6 h | pending |
+| V24 (`-v24`) | V21a pipeline with the DreaMS-backbone FP model | 31 min | 0.372 (−0.015 vs V21a, ~1 SE: DreaMS's panel-A gain did not transfer) |
+| V25 (`-v25`) | DreaMS FP + GLACIER (unseen-trained) + low-pop ×3 | 2.8 h | pending |
+| V26 (`-v26`) | V25 + our forward model (structure bits → spectrum) as ranker feature | 1.8 h | pending |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
