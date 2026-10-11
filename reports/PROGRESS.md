@@ -24,10 +24,10 @@
 | **V21a** (`-pop03`) | V19-ncbi with popularity weight λ 0.3 (final = z(ranker) + λ·z(pop); was 0.1) | 27 min | **0.387** (new best; +0.014 over V19-ncbi) |
 | V21b (`-pop10`) | same with λ 1.0 | 27 min | 0.264 (−0.11: popularity must stay a tie-breaker — the test's compounds are not the famous ones) |
 | V22 (`-v22`) | V21a + ranker trained with low-pop ×3 (lists whose truth is not among the 3 most popular duplicated) | 25 min | 0.385 (= V21a 0.387: low-pop training neither helps nor hurts) |
-| V23 (`-glacier`) | V22 + GLACIER cosine features (unseen-trained), run-3 FP | 2.6 h | pending |
+| V23 (`-glacier`) | V22 + GLACIER cosine features (unseen-trained), run-3 FP | 2.6 h | 0.381 (−0.004 vs V22: GLACIER neutral) |
 | V24 (`-v24`) | V21a pipeline with the DreaMS-backbone FP model | 31 min | 0.372 (−0.015 vs V21a, ~1 SE: DreaMS's panel-A gain did not transfer) |
-| V25 (`-v25`) | DreaMS FP + GLACIER (unseen-trained) + low-pop ×3 | 2.8 h | pending |
-| V26 (`-v26`) | V25 + our forward model (structure bits → spectrum) as ranker feature | 1.8 h | pending |
+| V25 (`-v25`) | DreaMS FP + GLACIER (unseen-trained) + low-pop ×3 | 2.8 h | 0.372 (= V24: GLACIER + low-pop neutral on DreaMS) |
+| V26 (`-v26`) | V25 + our forward model (structure bits → spectrum) as ranker feature | 1.8 h | 0.357 (−0.015 vs V25, −0.030 vs V21a: the best-validated variant is the worst on the LB) |
 | probe (`-probe-class1`) | V12 lists restricted to candidates with a direct library match (= f1 × MRR1) | 19 min | **0.149** = f1 × MRR1 ≈ 0.16 × 0.93: class 1 is at the library-search ceiling; V13's classes 2+3 = 0.223 |
 | V8 (V9 of own-submit) | same with generator | 13 min | not to be submitted (generator hurts LB) |
 | reference: `casmi26-fusion-base` (third-party fork) | | | 0.380 |
@@ -411,3 +411,45 @@ Before each day's submissions:
 Schedule:
 * ~20:47 UTC: full forum refresh and approach update, early enough that a new notebook can run before the reset.
 * 00:08 UTC: quick re-scrape of posts from the last hours, then submissions.
+
+## Round: Oct 11 LB — validation gains did not transfer (Oct 11, early morning)
+
+| paired comparison | validation (panel C C2X) | LB |
+|---|---|---|
+| V22 vs V21a (low-pop ×3 training) | +0.01–0.02 on low-pop slices | 0.385 vs 0.387 (0) |
+| V23 vs V22 (GLACIER, run-3 FP) | +0.012 | 0.381 vs 0.385 (−0.004) |
+| V24 vs V21a (DreaMS FP) | +0.009; FP alone on panel A 0.548 vs 0.351 | 0.372 vs 0.387 (−0.015) |
+| V25 vs V24 (GLACIER + low-pop on DreaMS) | +0.02 | 0.372 vs 0.372 (0) |
+| V26 vs V25 (our forward model) | **+0.03–0.04** | 0.357 vs 0.372 (**−0.015**) |
+
+None of the five beats V21a (0.387). Each step is within ~1 SE (0.016), but they all point the same way: every
+validated gain since V21a vanished or reversed. The best-validated variant (V26) is 0.030 (~2 SE) below V21a.
+**Next submission base: V21a.**
+
+**Why validation over-predicts these components** (hypotheses, in order of evidence):
+1. **External pretraining contaminates the panels.**
+   * GLACIER was trained on MassSpecGym (96 % of panel A's truths; we only masked it in training).
+   * DreaMS was pretrained (self-supervised) on GeMS, i.e. MassIVE/GNPS spectra. These probably include the very
+     Enveda / public spectra our panels are built from, which would explain why DreaMS FP alone jumped on panel A
+     (0.351 → 0.548) and gained nothing on the LB.
+2. **The forward model's gain sits on panel C** (public, mostly non-timsTOF instruments). On timsTOF panel A it is
+   flat (C2X 0.798 → 0.801), and the test is 100 % timsTOF Enveda.
+   * The contrastive fwd2 (V27) shows the instability: alone it scores A 0.062 (fwd1 0.402), B 0.749, C 0.44.
+   * In the ranker V27 ≈ V26 (C C2X 0.612–0.615 vs 0.580–0.591). The forward-model signal on these panels mostly
+     reflects which structures it has seen, not test-like generalisation.
+3. **LB noise.** One molecule ≈ 0.008; our five LB deltas are 0 to −0.015 each. Even so, five out of five without a
+   gain means validation-driven ranker changes are not moving the test score.
+
+**Plan changes**
+* Stop adding ranker features that only win on panel C or on in-MassSpecGym truths. A component must now win on
+  **panel A (timsTOF) on its not-in-MassSpecGym / low-pop slices** and must not rely on externally pretrained models
+  that may have seen the panel spectra. Drop GLACIER, DreaMS and the forward model from the submission line for now.
+* Focus on what moved the LB: the popularity prior (λ 0.1 → 0.3: +0.014) and candidate coverage (PubChem tier:
+  +0.03).
+* Tomorrow's queue (Oct 12):
+  1. `casmi26-own-submit-top1` — rank-1-only probe of V21a (the filler-poisoning question, topic 748029). The
+     published metric predicts about 0.33. A score ≥ 0.387 means our ranks 2–25 lose points.
+  2. `casmi26-own-submit-pop05` — λ 0.5 on V21a, to locate the popularity peak (0.1: 0.373, 0.3: 0.387,
+     1.0: 0.264).
+  3–5. Hold, and decide at the 20:47 refresh. Candidates: λ 0.4 / 0.2 around the peak; a substances-only
+     popularity prior (eligibility hedge, topic 741857); V21a with a larger PubChem budget at λ 0.3.
