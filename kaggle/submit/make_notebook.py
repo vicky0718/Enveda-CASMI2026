@@ -88,6 +88,8 @@ print(f"ranked {len(rows)} molecules, {time.time() - T0:.0f}s")''',
     r'''from casmi.metric import candidate_key
 sub_ids = pd.read_csv(f"{COMP}/sample_submission.csv").molecule_id
 keycache = P.load_keycache(ART)
+TOPK = __TOPK__  # guesses per molecule (25 = the metric's maximum; 1 = the filler-poisoning probe, topic 748029)
+print("guesses per molecule:", TOPK)
 out = {}
 for mid, smiles in rows:
     picked, seen = [], set()
@@ -96,7 +98,7 @@ for mid, smiles in rows:
         if k is None or k in seen:
             continue
         seen.add(k); picked.append(s)
-        if len(picked) == 25:
+        if len(picked) == TOPK:
             break
     out[mid] = picked
 sub = pd.DataFrame({"molecule_id": sub_ids,
@@ -114,9 +116,10 @@ def main():
     tims = "--tims-window" in sys.argv
     direct = "--direct-only" in sys.argv
     pop = next((float(a.split("=")[1]) for a in sys.argv if a.startswith("--pop=")), None)
+    topk = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--topk=")), 25)
     cells = [c.replace("__USE_GEN__", str(use_gen)).replace("__PC_N__", str(pc_n)).replace("__TIMS_WINDOW__", str(tims))
              .replace("__DIRECT_ONLY__", str(direct)).replace("__POP_LAMBDA__", str(pop))
-             .replace("__USE_GLACIER__", str("--glacier" in sys.argv)) for c in CELLS]
+             .replace("__USE_GLACIER__", str("--glacier" in sys.argv)).replace("__TOPK__", str(topk)) for c in CELLS]
     nb = {"cells": [{"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
                      "source": c.strip("\n").splitlines(keepends=True)} for c in cells],
           "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
@@ -133,6 +136,8 @@ def main():
         name = name.replace(".ipynb", f"_pop{pop:g}.ipynb")
     if "--glacier" in sys.argv:
         name = name.replace(".ipynb", "_glacier.ipynb")
+    if topk != 25:
+        name = name.replace(".ipynb", f"_top{topk}.ipynb")
     p = Path(__file__).with_name(name)
     p.write_text(json.dumps(nb, indent=1))
     print(p)

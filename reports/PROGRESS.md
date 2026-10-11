@@ -393,3 +393,16 @@ plus popularity re-ranks (+0.010 / +0.004) and a weighted reciprocal-rank fusion
   → V26 notebook (`kaggle/submit_v26`, `casmi26-own-submit-v26`; prints `forward model: True`) pushed 20:47 UTC. It
   replaces the λ 0.5 probe in the Oct 11 queue: V26, V25, V24, V23, V22.
 * `casmi26-dreams-ft2` (GPU): continued DreaMS fine-tune from `casmi26-dreams-ft` at half the learning rate, running.
+
+## Daily submission workflow (user instruction, Oct 11)
+
+Before each day's submissions:
+1. Scrape the forum (`python3 scripts/research/scrape_kaggle_forum.py`) and update the knowledge base
+   (`reports/FORUM_NOTES.md`: rulings, metric/data changes, technique evidence, LB cutoffs).
+2. Update the approaches from those findings: re-prioritise or add experiments, change the submission queue, and
+   prepare notebook variants.
+3. Then submit (5 slots/day) from notebooks that completed cleanly, and read the scores later.
+
+Schedule:
+* ~20:47 UTC: full forum refresh and approach update, early enough that a new notebook can run before the reset.
+* 00:08 UTC: quick re-scrape of posts from the last hours, then submissions.

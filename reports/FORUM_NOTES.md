@@ -62,3 +62,39 @@ both at 0.433 — 153 teams sit at exactly 0.433 (the current public pipeline), 
 
 **Other:** the leader (0.484) says no NIST or extra data is needed for a better score; molecule IDs of the visible test
 may be remapped before the end (no effect on us — we use no ID information).
+
+## 2026-10-11
+
+**Leaderboard** (3,020 teams): top 0.484 / 0.465 (rank 3) / 0.455 (rank 10). Medal cutoffs: gold ≥ 0.446 (16 teams),
+silver ≥ 0.438, bronze ≥ 0.434 (rank ~300); 0.425 is rank ~500 and 0.401 rank ~1,000. Ours: V21a 0.387, rank ~1,110.
+Oct 11 submissions so far: V22 0.385, V24 0.372; V23 / V25 / V26 (GLACIER notebooks) still scoring.
+
+**Forum (5 new posts)**
+* **Filler guesses may lower the score (topic 748029, open).** A team reports that the same rank-1 guesses score
+  0.426 with ranks 2–25 empty or as originally ranked, but 0.388–0.397 with three other sets of valid ranks 2–25
+  (RDKit-parseable, neutral, single-fragment). Under the published metric (v14, which our `metric.py` replicates;
+  re-checked today, identical code) guesses after rank 1 can only add. Related: thread 742088 (padded submission
+  scored 0.000); the hosts say the live scorer equals the published one and are "investigating". **Action:** LB
+  probe `casmi26-own-submit-top1` (V21a pipeline, rank 1 only). Published metric ⇒ it must score *below* 0.387
+  (ranks 2–25 add ~0.05–0.08 MRR in our validation). If it scores ≥ 0.387, our ranks 2–25 are poisoning rows and the
+  candidate filler needs filtering (find which guesses trigger it).
+* **Public 0.43+ lineage is not CV-validated (topic 748068).** Components were accepted on a ~130-molecule public LB
+  (one molecule ≈ 0.008). ICEBERG was "+0.013" in one version and dropped in a later one ("0.402 with vs 0.417
+  without"). This matches our policy: a component must win on held-out validation (panels A / C and the
+  not-in-MassSpecGym slice), and the LB is a noisy check (SE ≈ 0.016). GLACIER's and the forward model's LB effects
+  will be noisy too, so judge them on paired comparisons and validation together.
+* **Eligibility questions, unanswered:**
+  * Third-party weights without published training code; non-commercial labels; compliance-check scope
+    (topic 748065).
+  * **Whether PubMed-link counts may be used as a ranking feature (topic 741857 follow-up).** Our popularity prior
+    is z(log1p substances + log1p PubMed). If the hosts rule PubMed counts out, we need a substances-only prior.
+    Keep that variant ready and measure it on validation.
+  * Our own stack is unaffected otherwise: our own models, official MassSpecGym GLACIER weights (host-approved),
+    and an NCBI PubChem tier.
+
+**Approach updates from today's scrape**
+1. Filler-poisoning probe (above): one of tomorrow's slots, ready today.
+2. Popularity-prior hedge: a validation run with a substances-only popularity term (no PubMed), so a ruling against
+   PubMed counts costs no time.
+3. Keep validation first: V26/V27 (forward model) selection follows the validation table; the LB confirms or vetoes
+   only beyond ~2 SE.
